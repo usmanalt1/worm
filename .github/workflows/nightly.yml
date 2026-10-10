@@ -3,7 +3,7 @@ name: nightly-pipeline
 on:
   schedule:
     # 06:37 London, matching the Dagster schedule this replaces.
-    - cron: '37 6 * * *'
+    - cron: '49 19 * * *'
   workflow_dispatch:
 
 jobs:
