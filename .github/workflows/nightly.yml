@@ -31,6 +31,7 @@ jobs:
       PGUSER: ${{ secrets.PGUSER }}
       PGPASSWORD: ${{ secrets.PGPASSWORD }}
       PGDATABASE: ${{ secrets.PGDATABASE }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
 
@@ -66,3 +67,14 @@ jobs:
       # postgres_raw_tables reads it back off local disk, so splitting these across
       # jobs loses the handoff.
       - run: dagster job execute -f dagster/definitions.py -d dagster -j nightly_pipeline
+
+      # always(), so a failure in any step above still reports; the daemon's sensors
+      # cannot, since `dagster job execute` runs no daemon. continue-on-error keeps a
+      # refused mailbox from turning a good run red.
+      - name: Email pipeline outcome
+        if: always()
+        continue-on-error: true
+        env:
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python scripts/pipeline_alert.py "$JOB_STATUS" --run-url "$RUN_URL"

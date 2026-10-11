@@ -9,6 +9,7 @@ from dagster import (
     in_process_executor,
 )
 
+from alerts import email_alert_sensors
 from assets import (
     backtest_scorecard,
     bigquery_tables,
@@ -73,4 +74,5 @@ defs = Definitions(
     ],
     jobs=[nightly_pipeline, backtest_pipeline, bigquery_mirror],
     schedules=[nightly_schedule, backtest_schedule],
+    sensors=email_alert_sensors(nightly_pipeline),
 )
