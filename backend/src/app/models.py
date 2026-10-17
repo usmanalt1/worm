@@ -214,6 +214,27 @@ class PlayerAwards(models.Model):
         ]
 
 
+class DraftHistory(models.Model):
+    # One row per drafted player. A pick is immutable, so this is reference data rather
+    # than a per-season snapshot; draft_year is the draft, season the one it fed.
+    player_id = models.IntegerField()
+    player_name = models.CharField(max_length=100, null=True, blank=True)
+    draft_year = models.IntegerField()
+    season = models.CharField(max_length=20, null=True, blank=True)
+    round_number = models.IntegerField(null=True, blank=True)
+    round_pick = models.IntegerField(null=True, blank=True)
+    overall_pick = models.IntegerField(null=True, blank=True)
+    draft_type = models.CharField(max_length=50, null=True, blank=True)
+    team_id = models.IntegerField(null=True, blank=True)
+    run_timestamp = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'draft_history'
+        constraints = [
+            models.UniqueConstraint(fields=["player_id"], name="draft_history_unique_player_id"),
+        ]
+
+
 class GameSchedule(models.Model):
     # Pulled ahead of tip-off, so unlike TeamStats this has rows for unplayed games.
     # game_status: 1=Scheduled, 2=Live, 3=Final.

@@ -7,6 +7,19 @@ models:
       on_schema_change: append_new_columns
     alias: dim_players
     description: "This table contains dimension data for NBA players, including player information and statistics."
+  - name: dim_draft_picks
+    config:
+      materialized: table
+      on_schema_change: append_new_columns
+    alias: dim_draft_picks
+    description: >
+      One row per drafted player with pick position and pedigree flags. draft_year is the
+      draft; season is the one it fed. Undrafted players have no row.
+    columns:
+      - name: player_id
+        data_tests: [not_null, unique]
+      - name: overall_pick
+        data_tests: [not_null]
   - name: dim_teams
     config:
       materialized: table

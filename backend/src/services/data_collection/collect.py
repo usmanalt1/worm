@@ -9,6 +9,7 @@ from nba_api.stats.endpoints import leagueleaders, teamdashboardbygeneralsplits,
 from nba_api.stats.endpoints import leaguegamelog
 from nba_api.stats.endpoints import leaguedashplayerstats, leaguedashteamstats
 from nba_api.stats.endpoints import scheduleleaguev2
+from nba_api.stats.endpoints import drafthistory
 from http.client import RemoteDisconnected
 from services.data_collection.constants import Constants
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, SeasonType, SeasonTypeAllStar
@@ -346,6 +347,29 @@ class CollectRawNBAData(TransformHelper, Constants):
         df["season"] = season_year
 
         logging.info("...Raw Game Schedule DF Generated")
+        return df
+
+    def _get_draft_history(self, draft_year: int) -> pd.DataFrame:
+        """Every pick of one draft. A pick is never revised, so this is reference data."""
+        logging.info(f"Collecting draft history for {draft_year}")
+
+        response = drafthistory.DraftHistory(
+            season_year_nullable=str(draft_year), headers=self.headers, timeout=60,
+        )
+        df = self.clean_dataframe(response.get_data_frames()[0])
+        if df.empty:
+            return df
+
+        df = df.rename(columns={"person_id": "player_id", "season": "draft_year"})
+        df = df[[
+            "player_id", "player_name", "draft_year", "round_number", "round_pick",
+            "overall_pick", "draft_type", "team_id",
+        ]].copy()
+        df["draft_year"] = df["draft_year"].astype(int)
+        # The season the draft feeds, so this keys like every other table here.
+        df["season"] = df["draft_year"].apply(lambda year: f"{year}-{str(year + 1)[2:]}")
+
+        logging.info("...Raw Draft History DF Generated")
         return df
 
     def _get_player_awards(self, df_players: pd.DataFrame) -> pd.DataFrame:

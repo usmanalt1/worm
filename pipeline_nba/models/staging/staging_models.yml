@@ -41,3 +41,8 @@ models:
       materialized: view
     alias: staging_nba_game_schedule
     description: "This view contains the full-season game schedule, including unplayed games"
+  - name: stg_nba_draft_history
+    config:
+      materialized: view
+    alias: staging_nba_draft_history
+    description: "This view contains one row per drafted player with their pick position"

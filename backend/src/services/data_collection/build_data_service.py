@@ -7,6 +7,7 @@ from django.utils import timezone
 from app.models import PlayerAwards, AdvancedPlayerSeasonStats, AdvancedTeamSeasonStats
 import logging
 import pandas as pd
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +119,32 @@ class BuildDataService:
                 logger.info(f"Saved {len(df)} preseason {table_name} rows for {season_year}")
 
         return {"run_id": run_id, "seasons": seasons, "saved": saved}
+
+    def build_draft_history(self, draft_years: list, run_id: str = None) -> dict:
+        """Collect whole drafts into object storage.
+
+        A backfill rather than part of the nightly run: a draft is immutable once held,
+        so re-collecting it every night would buy nothing.
+        """
+        run_id = run_id or pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
+        storage = ObjectStorageService(generate_run_id=run_id).get_storage()
+        run_timestamp = pd.Timestamp.now()
+        collector = CollectRawNBAData(date_to_run=self.date)
+        saved = {}
+
+        for draft_year in draft_years:
+            df = collector._get_draft_history(draft_year=draft_year)
+            if df.empty:
+                logger.warning(f"No draft history returned for {draft_year}")
+                continue
+
+            df["run_timestamp"] = run_timestamp
+            storage.save(df=df, file_name=collector.DRAFT_HISTORY, season=df["season"].iloc[0])
+            saved[str(draft_year)] = len(df)
+            logger.info(f"Saved {len(df)} picks for the {draft_year} draft under run {run_id}")
+            time.sleep(1)  # to avoid rate limiting
+
+        return {"run_id": run_id, "draft_years": draft_years, "saved": saved}
 
     def build_advanced_season_stats(self, seasons: list, season_types: list = None, storage=None, run_timestamp=None) -> dict:
         """Collect season-level advanced stats into object storage; re-running refreshes."""
