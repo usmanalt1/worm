@@ -107,5 +107,6 @@ class TableModelFactory:
             "dim_rosters": TableModel(),
             "dim_teams": TableModel(),
             "mart_team_strength": TableModel(),
+            "mart_team_schedule_load": TableModel(),
         }
         return table_model.get(table)

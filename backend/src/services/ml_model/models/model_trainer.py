@@ -13,6 +13,7 @@ from services.ml_model.features.playoff_boxscore_transformer import PlayoffBoxsc
 from services.ml_model.features.games_transformer import GamesTransformer
 from services.ml_model.features.players_transfomer import PlayersTransformer
 from services.ml_model.features.team_strength_transformer import TeamStrengthTransformer
+from services.ml_model.features.schedule_load_transformer import ScheduleLoadTransformer
 from config.logger import get_logger
 
 logger = get_logger(__name__)
@@ -63,7 +64,10 @@ class ModelTraner(ModelBase):
         self.season = season
         self.season_type = season_type
         self.mode = mode
-        all_games, all_team_stats, all_player_stats, self.df_teams, self.df_team_strength = self.load_data()
+        (
+            all_games, all_team_stats, all_player_stats,
+            self.df_teams, self.df_team_strength, self.df_schedule_load,
+        ) = self.load_data()
 
         self.train_season_type = TRAIN_SEASON_TYPE.get(season_type, season_type)
         self._select_frames(all_games, all_team_stats, all_player_stats)
@@ -111,8 +115,10 @@ class ModelTraner(ModelBase):
         df_teams = self.db_service.read("dim_teams")
         # Resolved per game by the transformer, so it needs no season_type filtering below.
         df_team_strength = self.db_service.read("mart_team_strength")
+        # Per team-game and keyed on game_id, so likewise.
+        df_schedule_load = self.db_service.read("mart_team_schedule_load")
 
-        return df_games, df_team_stats, df_player_stats, df_teams, df_team_strength
+        return df_games, df_team_stats, df_player_stats, df_teams, df_team_strength, df_schedule_load
 
     def _build_regular_transformers(self) -> list:
         games_transformer = GamesTransformer(df_games=self.df_games)
@@ -128,14 +134,20 @@ class ModelTraner(ModelBase):
             df_games=self.df_games,
         )
 
+        team_strength_transformer = TeamStrengthTransformer(
+            model_df=players_transformer.transform(),
+            df_team_strength=self.df_team_strength,
+            df_games=self.df_games,
+        )
+
         return [
             games_transformer,
             boxscore_transformer,
             players_transformer,
-            TeamStrengthTransformer(
-                model_df=players_transformer.transform(),
-                df_team_strength=self.df_team_strength,
-                df_games=self.df_games,
+            team_strength_transformer,
+            ScheduleLoadTransformer(
+                model_df=team_strength_transformer.transform(),
+                df_schedule_load=self.df_schedule_load,
             ),
         ]
 
@@ -167,13 +179,19 @@ class ModelTraner(ModelBase):
             df_games=players_schedule,
         )
 
+        team_strength_transformer = TeamStrengthTransformer(
+            model_df=players_transformer.transform(),
+            df_team_strength=self.df_team_strength,
+            df_games=players_schedule,
+        )
+
         return [
             playoff_transformer,
             players_transformer,
-            TeamStrengthTransformer(
-                model_df=players_transformer.transform(),
-                df_team_strength=self.df_team_strength,
-                df_games=players_schedule,
+            team_strength_transformer,
+            ScheduleLoadTransformer(
+                model_df=team_strength_transformer.transform(),
+                df_schedule_load=self.df_schedule_load,
             ),
         ]
 

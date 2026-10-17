@@ -690,3 +690,29 @@ class MartTeamStrength(models.Model):
     class Meta:
         managed = False
         db_table = '"nba_marts"."mart_team_strength"'
+
+
+class MartTeamScheduleLoad(models.Model):
+    """Travel and schedule load per team-game.
+
+    Measured against the team's previous venue, so 0 on its first game of a season.
+    road_trip_game is 0 at home and n on the nth consecutive away game.
+    """
+    season = models.CharField(max_length=20)
+    season_id = models.CharField(max_length=20, null=True, blank=True)
+    season_type = models.CharField(max_length=20, null=True, blank=True)
+    # Composite grain with team_id, so not actually unique; Django needs a single pk.
+    game_id = models.CharField(max_length=20, primary_key=True)
+    game_date = models.DateField(null=True, blank=True)
+    team_id = models.IntegerField()
+    is_home = models.IntegerField(null=True, blank=True)
+    venue_altitude_m = models.IntegerField(null=True, blank=True)
+    road_trip_game = models.IntegerField(null=True, blank=True)
+    games_prev_7d = models.IntegerField(null=True, blank=True)
+    travel_km = models.FloatField(null=True, blank=True)
+    tz_delta = models.IntegerField(null=True, blank=True)
+    altitude_gain = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = '"nba_marts"."mart_team_schedule_load"'

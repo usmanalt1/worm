@@ -7,6 +7,25 @@ models:
       on_schema_change: append_new_columns
     alias: dim_players
     description: "This table contains dimension data for NBA players, including player information and statistics."
+  - name: mart_team_schedule_load
+    config:
+      materialized: table
+      on_schema_change: append_new_columns
+    alias: mart_team_schedule_load
+    description: >
+      Travel and schedule load per team-game, from dim_games and the team_locations seed.
+      travel_km, tz_delta and altitude_gain are measured against the team's previous
+      venue and are 0 on its first game of a season. road_trip_game is 0 at home and n on
+      the nth consecutive away game.
+    columns:
+      - name: team_id
+        data_tests: [not_null]
+      - name: game_id
+        data_tests: [not_null]
+      - name: travel_km
+        data_tests: [not_null]
+      - name: games_prev_7d
+        data_tests: [not_null]
   - name: dim_draft_picks
     config:
       materialized: table

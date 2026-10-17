@@ -1,6 +1,6 @@
 from logging import getLogger
 from pathlib import Path
-from app.models import SeasonRecord, TeamInfo, PlayerInfo, TeamRoster, TeamStats, PlayerStats, TeamMatchups, PlayerAwards, GameSchedule, DraftHistory, DimGames, FctTeamStats, FctPlayerStats, DimRosters, DimTeams, AdvancedPlayerSeasonStats, AdvancedTeamSeasonStats, MartTeamStrength
+from app.models import SeasonRecord, TeamInfo, PlayerInfo, TeamRoster, TeamStats, PlayerStats, TeamMatchups, PlayerAwards, GameSchedule, DraftHistory, DimGames, FctTeamStats, FctPlayerStats, DimRosters, DimTeams, AdvancedPlayerSeasonStats, AdvancedTeamSeasonStats, MartTeamStrength, MartTeamScheduleLoad
 from django.db import connections
 from sqlalchemy import create_engine
 from sqlalchemy.engine import URL
@@ -34,6 +34,7 @@ class DBService(StorageBase):
             "dim_rosters": DimRosters,
             "dim_teams": DimTeams,
             "mart_team_strength": MartTeamStrength,
+            "mart_team_schedule_load": MartTeamScheduleLoad,
         }
         self.engine = self._engine_from_django()
         self.file_path_parent_name = os.getenv("FILE_PATH_PARENT_NAME")
