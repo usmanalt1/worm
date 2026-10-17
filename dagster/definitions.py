@@ -17,6 +17,7 @@ from assets import (
     latest_nba_data,
     live_predictions,
     postgres_raw_tables,
+    team_strength,
 )
 
 # in_process: the assets are sequential, so forking only re-imports Django and sklearn
@@ -24,7 +25,7 @@ from assets import (
 nightly_pipeline = define_asset_job(
     "nightly_pipeline",
     selection=AssetSelection.assets(
-        latest_nba_data, postgres_raw_tables, dbt_marts, live_predictions,
+        latest_nba_data, postgres_raw_tables, dbt_marts, team_strength, live_predictions,
     ),
     executor_def=in_process_executor,
     description="Collect the live season, load it, rebuild the marts, re-predict the upcoming slate.",
@@ -68,6 +69,7 @@ defs = Definitions(
         latest_nba_data,
         postgres_raw_tables,
         dbt_marts,
+        team_strength,
         live_predictions,
         backtest_scorecard,
         bigquery_tables,

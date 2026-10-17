@@ -643,3 +643,29 @@ class MartTeamGameForm(models.Model):
     class Meta:
         managed = False
         db_table = '"nba_marts"."mart_team_game_form"'
+
+
+class MartTeamStrength(models.Model):
+    """elo_pre is the rating going into the game, elo_post the one after it.
+
+    A game may only read its own _pre columns; the _post pair is what a *later* game
+    inherits. Regular season and playoffs, built by the team_strength Dagster asset
+    rather than dbt.
+    """
+    season = models.CharField(max_length=20)
+    # Composite grain, so not actually unique; Django just needs a single pk.
+    game_id = models.CharField(max_length=20, primary_key=True)
+    game_date = models.DateField(null=True, blank=True)
+    team_id = models.IntegerField()
+    is_home = models.IntegerField(null=True, blank=True)
+    elo_pre = models.FloatField(null=True, blank=True)
+    elo_post = models.FloatField(null=True, blank=True)
+    opponent_elo_pre = models.FloatField(null=True, blank=True)
+    margin = models.FloatField(null=True, blank=True)
+    adj_margin = models.FloatField(null=True, blank=True)
+    form_adj_margin = models.FloatField(null=True, blank=True)
+    form_adj_margin_post = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = '"nba_marts"."mart_team_strength"'

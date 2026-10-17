@@ -19,6 +19,7 @@ from services.db.db_service import DBService
 from services.ml_model.models.model_trainer import ModelTraner, MODE_LIVE
 from services.ml_model.model_selection import best_strategy
 from services.ml_model.prediction_history import persist_predictions
+from services.ratings.team_strength_service import TeamStrengthService
 from services.redis.redis_client import RedisClient
 from services.redis.redis_key_constants import model_run_cache_key, LAST_RUN
 from services.warehouse_storage.bigquery.service import BigQueryService
@@ -112,6 +113,28 @@ def dbt_marts(context: AssetExecutionContext, config: NightlyConfig, postgres_ra
     return {"target": target, "returncode": process.returncode}
 
 
+@asset(compute_kind="python")
+def team_strength(context: AssetExecutionContext, dbt_marts: dict) -> dict:
+    """Rate every completed game into mart_team_strength.
+
+    Python, not dbt: each rating update reads the previous game's rating.
+    """
+    service = TeamStrengthService(DBService().engine)
+    rated = service.build()
+    rows = service.write(rated)
+
+    leaders = (
+        rated.sort_values(["game_date", "game_id"]).groupby("team_id").tail(1)
+        .nlargest(10, "elo_post")[["team_id", "elo_post", "form_adj_margin"]]
+    )
+    context.add_output_metadata({
+        "rows": rows,
+        "games": int(rated["game_id"].nunique()),
+        "leaders": MetadataValue.md(f"```\n{leaders.round(1).to_string(index=False)}\n```"),
+    })
+    return {"rows": rows}
+
+
 def _run_one(context: AssetExecutionContext, season: str, season_type: str, strategy: str) -> dict:
     """Train one strategy for one season type, cache it and store its predictions."""
     label = f"{strategy}/{season_type}"
@@ -158,8 +181,16 @@ def _pick_last_run(summary: dict, season: str, season_types: list, strategies: l
 
 
 @asset(compute_kind="python")
-def live_predictions(context: AssetExecutionContext, config: NightlyConfig, dbt_marts: dict) -> dict:
+def live_predictions(
+    context: AssetExecutionContext,
+    config: NightlyConfig,
+    dbt_marts: dict,
+    team_strength: dict,
+) -> dict:
     """Predict the upcoming slate for each strategy and season type.
+
+    Depends on team_strength, not just dbt_marts: the trainer reads
+    mart_team_strength, so predicting before it is rebuilt would use stale ratings.
 
     Stored durably as well as cached: Redis is replaced tomorrow night, leaving
     nothing to grade once games are played.
