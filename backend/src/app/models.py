@@ -214,6 +214,33 @@ class PlayerAwards(models.Model):
         ]
 
 
+class PlayerInjury(models.Model):
+    # One row per listed player per day, appended rather than replaced, so a status can be
+    # reconstructed as of a past date. source_player_id is the feed's id, not an NBA one.
+    source_player_id = models.CharField(max_length=64)
+    player_name = models.CharField(max_length=100)
+    team_name = models.CharField(max_length=100, null=True, blank=True)
+    team_abbreviation = models.CharField(max_length=10, null=True, blank=True)
+    status = models.CharField(max_length=40, null=True, blank=True)
+    injury_type = models.CharField(max_length=100, null=True, blank=True)
+    return_date = models.DateField(null=True, blank=True)
+    comment = models.TextField(null=True, blank=True)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    collected_date = models.DateField()
+    # Carried by the storage partition, as on every other raw table.
+    season = models.CharField(max_length=20, null=True, blank=True)
+    run_timestamp = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'player_injuries'
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_player_id", "collected_date"],
+                name="player_injuries_unique_player_day",
+            ),
+        ]
+
+
 class DraftHistory(models.Model):
     # One row per drafted player. A pick is immutable, so this is reference data rather
     # than a per-season snapshot; draft_year is the draft, season the one it fed.
@@ -690,6 +717,29 @@ class MartTeamStrength(models.Model):
     class Meta:
         managed = False
         db_table = '"nba_marts"."mart_team_strength"'
+
+
+class MartPlayerValue(models.Model):
+    """Per player-game box-score value, and the average of their previous 20 games.
+
+    value_pre crosses seasons on purpose, so a player carries a value into a new season
+    before playing a game in it. Null on a player's very first game.
+    """
+    season = models.CharField(max_length=20)
+    season_type = models.CharField(max_length=20, null=True, blank=True)
+    player_id = models.IntegerField()
+    team_id = models.IntegerField(null=True, blank=True)
+    # Composite grain with player_id, so not actually unique; Django needs a single pk.
+    game_id = models.CharField(max_length=20, primary_key=True)
+    game_date = models.DateField(null=True, blank=True)
+    minutes = models.FloatField(null=True, blank=True)
+    game_score = models.FloatField(null=True, blank=True)
+    value_pre = models.FloatField(null=True, blank=True)
+    minutes_pre = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = '"nba_marts"."mart_player_value"'
 
 
 class MartTeamScheduleLoad(models.Model):

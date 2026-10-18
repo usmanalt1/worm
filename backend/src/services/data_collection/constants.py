@@ -11,3 +11,4 @@ class Constants:
     ADVANCED_PLAYER_SEASON_STATS = "advanced_player_season_stats"
     ADVANCED_TEAM_SEASON_STATS = "advanced_team_season_stats"
     DRAFT_HISTORY = "draft_history"
+    PLAYER_INJURIES = "player_injuries"

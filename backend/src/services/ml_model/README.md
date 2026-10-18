@@ -215,6 +215,12 @@ Live predictions land in two places:
   Overwriting it later would be hindsight. That table is what grades the model over time
   and what `best_strategy` reads to pick which run the homepage opens on.
 
+`best_strategy` ranks on Brier score, not hit rate — a confident correct call should beat
+a hesitant one — and returns None until a season has `MIN_GRADED_GAMES` results. So for
+roughly the first month the homepage stays on whichever strategy comes first in
+`NightlyConfig.strategies` rather than switching. That is deliberate: the strategies sit
+about a point of accuracy apart, which a few dozen games cannot resolve.
+
 Backtests from the Predictions page cache per user, under
 `user_run_cache_key(user_id, ...)` with a 24-hour TTL. **The page hydrates from that cache
 on load**, so after changing anything upstream you must press Run again — a plain reload

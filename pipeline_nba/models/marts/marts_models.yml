@@ -7,6 +7,23 @@ models:
       on_schema_change: append_new_columns
     alias: dim_players
     description: "This table contains dimension data for NBA players, including player information and statistics."
+  - name: mart_player_value
+    config:
+      materialized: table
+      on_schema_change: append_new_columns
+    alias: mart_player_value
+    description: >
+      Per player-game Hollinger game score, with value_pre and minutes_pre as the average
+      of that player's previous 20 games. The window crosses seasons on purpose, so a
+      player carries a value into a new season before playing a game in it. Regular
+      season only. value_pre is null on a player's very first game.
+    columns:
+      - name: player_id
+        data_tests: [not_null]
+      - name: game_id
+        data_tests: [not_null]
+      - name: game_score
+        data_tests: [not_null]
   - name: mart_team_schedule_load
     config:
       materialized: table

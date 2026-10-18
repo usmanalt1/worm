@@ -1,0 +1,105 @@
+name: django-migrations
+
+# Manual only. deploy-api deliberately does not migrate, so a schema change has to be
+# applied from here before the code that needs it ships.
+on:
+  workflow_dispatch:
+    inputs:
+      direction:
+        description: 'apply = migrate forward; rollback = unapply down to target'
+        type: choice
+        options: [apply, rollback]
+        default: apply
+      app:
+        description: 'Django app label'
+        default: app
+      target:
+        description: 'Target migration, e.g. 0021_martteamstrength. Blank applies everything.'
+        required: false
+      confirm_target:
+        description: 'Rollback only: retype the target exactly. Rolling back a real table DROPS it and its rows.'
+        required: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
+      # Migration 0014 creates this role and reads its name and password from settings.
+      LLM_DB_USER: ${{ secrets.LLM_DB_USER }}
+      LLM_DB_PASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
+      # Inputs go through the environment, never interpolated into a shell line.
+      DIRECTION: ${{ inputs.direction }}
+      APP: ${{ inputs.app }}
+      TARGET: ${{ inputs.target }}
+      CONFIRM_TARGET: ${{ inputs.confirm_target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refuse an unconfirmed rollback
+        if: ${{ inputs.direction == 'rollback' }}
+        run: |
+          if [ -z "$TARGET" ]; then
+            echo "::error::A rollback needs a target migration to unapply down to."
+            exit 1
+          fi
+          if [ "$CONFIRM_TARGET" != "$TARGET" ]; then
+            echo "::error::confirm_target must match target exactly."
+            exit 1
+          fi
+          echo "::warning::0018 and 0019 run SQL with no reverse, so Django cannot unapply past 0020."
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+
+      # mysqlclient builds from source and needs the client headers.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
+
+      - run: pip install -r requirements.txt
+
+      - name: State before
+        run: |
+          {
+            echo "### Before"
+            echo '```'
+            python backend/src/manage.py showmigrations "$APP"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Plan
+        run: |
+          if [ -n "$TARGET" ]; then
+            set -- "$APP" "$TARGET"
+          else
+            set --
+          fi
+          {
+            echo "### Plan ($DIRECTION)"
+            echo '```'
+            python backend/src/manage.py migrate "$@" --plan
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          python backend/src/manage.py migrate "$@" --plan
+
+      - name: Migrate
+        run: |
+          if [ -n "$TARGET" ]; then
+            python backend/src/manage.py migrate "$APP" "$TARGET" --no-input
+          else
+            python backend/src/manage.py migrate --no-input
+          fi
+
+      - name: State after
+        if: always()
+        run: |
+          {
+            echo "### After"
+            echo '```'
+            python backend/src/manage.py showmigrations "$APP"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

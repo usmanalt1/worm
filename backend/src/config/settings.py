@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     LLM_DB_USER: str = "llm_readonly"
     LLM_DB_PASSWORD: str = "llm_readonly"
     ANTHROPIC_API_KEY: Optional[str] = None
+    BIGBALLS_API_KEY: Optional[str] = None
     # Only read by AzureBlobStorage. Required here would fail any deploy not on STORAGE=az.
     CONN_STR: Optional[str] = None
     AZURE_KEY: Optional[str] = None
