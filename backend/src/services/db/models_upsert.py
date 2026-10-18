@@ -64,7 +64,8 @@ class PlayersInfo(TableModel):
     source_id_field = "player_id"
 
 class TeamsRoster(TableModel):
-    unique_fields = ["team_id", "player_id", "season_id"]
+    # Not team_id: a player who changes team must move rather than gain a second row.
+    unique_fields = ["player_id", "season_id"]
 
 class TeamMatchups(TableModel):
     unique_fields = ["season_id", "team_id", "game_date"]

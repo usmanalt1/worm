@@ -61,7 +61,7 @@ class TeamRoster(models.Model):
     class Meta:
         db_table = 'teams_roster'
         constraints = [
-            models.UniqueConstraint(fields=["team_id", "player_id", "season_id"], name="teams_roster_unique_team_player_season"),
+            models.UniqueConstraint(fields=["player_id", "season_id"], name="teams_roster_unique_player_season"),
         ]
 
 

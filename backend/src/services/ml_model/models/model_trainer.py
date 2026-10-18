@@ -14,6 +14,7 @@ from services.ml_model.features.games_transformer import GamesTransformer
 from services.ml_model.features.players_transfomer import PlayersTransformer
 from services.ml_model.features.team_strength_transformer import TeamStrengthTransformer
 from services.ml_model.features.schedule_load_transformer import ScheduleLoadTransformer
+from services.ml_model.features.roster_value_transformer import RosterValueTransformer
 from config.logger import get_logger
 
 logger = get_logger(__name__)
@@ -67,6 +68,7 @@ class ModelTraner(ModelBase):
         (
             all_games, all_team_stats, all_player_stats,
             self.df_teams, self.df_team_strength, self.df_schedule_load,
+            self.df_player_value, self.df_roster_history, self.df_current_roster,
         ) = self.load_data()
 
         self.train_season_type = TRAIN_SEASON_TYPE.get(season_type, season_type)
@@ -117,8 +119,17 @@ class ModelTraner(ModelBase):
         df_team_strength = self.db_service.read("mart_team_strength")
         # Per team-game and keyed on game_id, so likewise.
         df_schedule_load = self.db_service.read("mart_team_schedule_load")
+        # Regular season only by construction, and resolved per game by the transformer.
+        df_player_value = self.db_service.read("mart_player_value")
+        # Game-log derived, so it dates a past roster. Only ever read for played games.
+        df_roster_history = self.db_service.read("dim_rosters")
+        # Present-day snapshot, which is the point: it knows a signing before they play.
+        df_current_roster = self.db_service.read("teams_roster")
 
-        return df_games, df_team_stats, df_player_stats, df_teams, df_team_strength, df_schedule_load
+        return (
+            df_games, df_team_stats, df_player_stats, df_teams, df_team_strength,
+            df_schedule_load, df_player_value, df_roster_history, df_current_roster,
+        )
 
     def _build_regular_transformers(self) -> list:
         games_transformer = GamesTransformer(df_games=self.df_games)
@@ -140,14 +151,23 @@ class ModelTraner(ModelBase):
             df_games=self.df_games,
         )
 
+        schedule_load_transformer = ScheduleLoadTransformer(
+            model_df=team_strength_transformer.transform(),
+            df_schedule_load=self.df_schedule_load,
+        )
+
         return [
             games_transformer,
             boxscore_transformer,
             players_transformer,
             team_strength_transformer,
-            ScheduleLoadTransformer(
-                model_df=team_strength_transformer.transform(),
-                df_schedule_load=self.df_schedule_load,
+            schedule_load_transformer,
+            RosterValueTransformer(
+                model_df=schedule_load_transformer.transform(),
+                df_player_value=self.df_player_value,
+                df_roster_history=self.df_roster_history,
+                df_current_roster=self.df_current_roster,
+                df_games=self.df_games,
             ),
         ]
 

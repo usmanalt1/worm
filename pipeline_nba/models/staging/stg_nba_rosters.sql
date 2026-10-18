@@ -7,4 +7,5 @@ SELECT
     CAST(season_id AS VARCHAR) AS season_id,
     season,
     run_timestamp
-FROM {{ get_latest_by_run_timestamp('teams_roster', 'season_id, team_id, player_id') }}
+-- Not partitioned on team_id: that keeps a row per team a player has been seen on.
+FROM {{ get_latest_by_run_timestamp('teams_roster', 'season_id, player_id') }}
