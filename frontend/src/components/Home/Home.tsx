@@ -35,21 +35,6 @@ export function Home() {
             .slice(0, 10);
     }, [upcoming]);
 
-    const latest = useMemo(
-        () => [...stats.graded]
-            .sort((a, b) => new Date(b.game_date).getTime() - new Date(a.game_date).getTime())
-            .slice(0, 10),
-        [stats.graded],
-    );
-
-    const upsets = useMemo(
-        () => stats.graded
-            .filter((prediction) => !prediction.hit)
-            .sort((a, b) => b.confidence - a.confidence)
-            .slice(0, 10),
-        [stats.graded],
-    );
-
     const modelName = strategy?.replace(/_/g, ' ');
     const typeLabel = upcomingSeasonType === 'preseason' ? 'preseason' : 'season';
 
