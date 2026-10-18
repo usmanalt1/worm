@@ -24,6 +24,32 @@ models:
         data_tests: [not_null]
       - name: game_score
         data_tests: [not_null]
+  - name: mart_player_volatility
+    config:
+      materialized: table
+      on_schema_change: append_new_columns
+    alias: mart_player_volatility
+    description: >
+      Game-to-game swing in a player's output, per player-season. volatility_raw is the
+      standard deviation of game score per 36 after fitting out that player's minutes, so
+      it measures reliability of output rather than role churn. volatility_adj then
+      removes the league's volatility-to-minutes slope, because a per-36 rate is noisier
+      from short stints and raw volatility correlates -0.35 with minutes per game;
+      adjusting drops that to -0.06 while leaving the scale and the reliability alone.
+      volatility_shrunk is the empirical Bayes posterior on volatility_adj using the
+      season's league_mean and tau, both computed over players with 30+ qualifying games,
+      and is the column to rank on. High is boom-or-bust, not worse. Games under 10
+      minutes are excluded and a player needs 15 qualifying games to appear. Regular
+      season only, inherited from mart_player_value.
+    columns:
+      - name: player_id
+        data_tests: [not_null]
+      - name: season
+        data_tests: [not_null]
+      - name: volatility_raw
+        data_tests: [not_null]
+      - name: volatility_shrunk
+        data_tests: [not_null]
   - name: mart_team_schedule_load
     config:
       materialized: table

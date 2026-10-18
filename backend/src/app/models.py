@@ -766,3 +766,31 @@ class MartTeamScheduleLoad(models.Model):
     class Meta:
         managed = False
         db_table = '"nba_marts"."mart_team_schedule_load"'
+
+
+class MartPlayerVolatility(models.Model):
+    """Game-to-game swing in a player's output per season, with the shrinkage moments.
+
+    High volatility is boom-or-bust, not worse. Adjusted for the league's
+    volatility-to-minutes slope, so it ranks temperament rather than bench role.
+    Regular season only.
+    """
+    season = models.CharField(max_length=20)
+    season_type = models.CharField(max_length=20, null=True, blank=True)
+    # Composite grain with season, so not actually unique; Django needs a single pk.
+    player_id = models.IntegerField(primary_key=True)
+    games = models.IntegerField(null=True, blank=True)
+    minutes_total = models.FloatField(null=True, blank=True)
+    minutes_per_game = models.FloatField(null=True, blank=True)
+    mean_per36 = models.FloatField(null=True, blank=True)
+    volatility_raw = models.FloatField(null=True, blank=True)
+    volatility_adj = models.FloatField(null=True, blank=True)
+    volatility_se = models.FloatField(null=True, blank=True)
+    volatility_shrunk = models.FloatField(null=True, blank=True)
+    role_slope = models.FloatField(null=True, blank=True)
+    league_mean = models.FloatField(null=True, blank=True)
+    tau = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = '"nba_marts"."mart_player_volatility"'

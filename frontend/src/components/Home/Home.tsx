@@ -107,27 +107,6 @@ export function Home() {
 
             <HomePostseason index={nextIndex()} />
 
-            {hasTrackRecord && (
-                <>
-                    <section style={{ marginBottom: 'var(--section-gap)' }}>
-                        <SectionHeader
-                            index={nextIndex()}
-                            title="Latest Calls"
-                            subtitle={modelName ? `How ${modelName} did on the games just played` : 'Most recent graded predictions'}
-                        />
-                        <HomePredictionRail predictions={latest} empty="No graded predictions yet." />
-                    </section>
-
-                    <section style={{ marginBottom: 'var(--section-gap)' }}>
-                        <SectionHeader
-                            index={nextIndex()}
-                            title="Burned"
-                            subtitle="The games it was most sure about and still got wrong"
-                        />
-                        <HomePredictionRail predictions={upsets} empty="No misses on record — yet." />
-                    </section>
-                </>
-            )}
         </div>
     );
 }
