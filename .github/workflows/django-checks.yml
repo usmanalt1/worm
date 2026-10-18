@@ -1,0 +1,37 @@
+name: django-checks
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'requirements.txt'
+
+jobs:
+  missing-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      # Not secrets. Settings requires both to exist, and this job never reaches a
+      # database: makemigrations --check compares models to the files on disk, and warns
+      # rather than fails when it cannot verify migration history.
+      DJANGO_SECRET_KEY: ci-only-not-a-real-key
+      JWT_SIGNING_KEY: ci-only-not-a-real-key
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+
+      # mysqlclient builds from source and needs the client headers.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
+
+      - run: pip install -r requirements.txt
+
+      - name: Fail if a model changed without a migration
+        run: |
+          if ! python backend/src/manage.py makemigrations --check --dry-run; then
+            echo "::error::A model has changed with no matching migration. Run 'python backend/src/manage.py makemigrations' and commit the result."
+            exit 1
+          fi

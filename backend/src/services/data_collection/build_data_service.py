@@ -1,12 +1,15 @@
 
 from services.data_collection.collect import CollectRawNBAData
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, SeasonType, SeasonTypeAllStar
+from services.data_collection.constants import Constants
+from services.injuries.service import InjuryFeedService
 from services.object_storage.service import ObjectStorageService
 from datetime import datetime, timedelta
 from django.utils import timezone
 from app.models import PlayerAwards, AdvancedPlayerSeasonStats, AdvancedTeamSeasonStats
 import logging
 import pandas as pd
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +89,7 @@ class BuildDataService:
 
         _save(collector.build_nba_data(season_id=season_id, season_year=season_year, team_roster=True))
         _save(collector.build_nba_data(season_id=season_id, season_year=season_year, game_schedule=True))
+        _save(collector.build_player_injuries(collected_date=today.date()))
         collector.build_advanced_season_stats(
             seasons=[season_year], storage=storage, run_timestamp=run_timestamp,
         )
@@ -118,6 +122,53 @@ class BuildDataService:
                 logger.info(f"Saved {len(df)} preseason {table_name} rows for {season_year}")
 
         return {"run_id": run_id, "seasons": seasons, "saved": saved}
+
+    def build_player_injuries(self, collected_date) -> dict:
+        """Today's injury snapshot, keyed by the date it was taken.
+
+        Third-party and additive, so a failure returns nothing rather than raising: the
+        night's predictions must not depend on an outside feed being up.
+        """
+        try:
+            df = InjuryFeedService().fetch_nba()
+        except Exception:
+            logger.exception("Injury feed unavailable; continuing without today's snapshot")
+            return {}
+
+        if df is None or df.empty:
+            logger.warning("Injury feed returned no rows")
+            return {}
+
+        df["collected_date"] = collected_date
+        logger.info(f"Collected {len(df)} injury rows for {collected_date}")
+
+        return {Constants.PLAYER_INJURIES: df}
+
+    def build_draft_history(self, draft_years: list, run_id: str = None) -> dict:
+        """Collect whole drafts into object storage.
+
+        A backfill rather than part of the nightly run: a draft is immutable once held,
+        so re-collecting it every night would buy nothing.
+        """
+        run_id = run_id or pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
+        storage = ObjectStorageService(generate_run_id=run_id).get_storage()
+        run_timestamp = pd.Timestamp.now()
+        collector = CollectRawNBAData(date_to_run=self.date)
+        saved = {}
+
+        for draft_year in draft_years:
+            df = collector._get_draft_history(draft_year=draft_year)
+            if df.empty:
+                logger.warning(f"No draft history returned for {draft_year}")
+                continue
+
+            df["run_timestamp"] = run_timestamp
+            storage.save(df=df, file_name=collector.DRAFT_HISTORY, season=df["season"].iloc[0])
+            saved[str(draft_year)] = len(df)
+            logger.info(f"Saved {len(df)} picks for the {draft_year} draft under run {run_id}")
+            time.sleep(1)  # to avoid rate limiting
+
+        return {"run_id": run_id, "draft_years": draft_years, "saved": saved}
 
     def build_advanced_season_stats(self, seasons: list, season_types: list = None, storage=None, run_timestamp=None) -> dict:
         """Collect season-level advanced stats into object storage; re-running refreshes."""

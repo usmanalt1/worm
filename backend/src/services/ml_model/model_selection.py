@@ -4,28 +4,46 @@ from typing import List, Optional
 
 from services.ml_model.prediction_history import read_graded
 
+# The strategies sit about a point of accuracy apart, so a handful of graded games says
+# nothing about which is ahead. This is a floor on absurdity, not a significance test:
+# even a full season struggles to separate them.
+MIN_GRADED_GAMES = 200
 
-def hit_rate(strategy: str, season: str, season_type: str) -> Optional[float]:
-    """Share of graded calls this strategy got right, None until it has one."""
+
+def brier_score(strategy: str, season: str, season_type: str) -> Optional[float]:
+    """Mean squared error of this strategy's probabilities, lower being better.
+
+    Scored on the forecast rather than on right-or-wrong, so a confident correct call
+    beats a hesitant one and a confident miss is punished. None until there are
+    MIN_GRADED_GAMES to judge on.
+    """
     graded = read_graded(
         strategy=strategy, season=season, season_type=season_type, graded_only=True,
     )
-    if not graded:
+    if len(graded) < MIN_GRADED_GAMES:
         return None
 
-    hits = sum(1 for row in graded if row["predicted_home_win"] == row["actual_home_win"])
-    return hits / len(graded)
+    squared_errors = [
+        (row["home_win_probability"] - (1.0 if row["actual_home_win"] else 0.0)) ** 2
+        for row in graded
+    ]
+
+    return sum(squared_errors) / len(squared_errors)
 
 
 def best_strategy(season: str, season_type: str, candidates: List[str]) -> Optional[str]:
-    """The best-performing candidate, None while none of them has a graded call."""
-    rated = [
-        (strategy, rate)
-        for strategy, rate in ((name, hit_rate(name, season, season_type)) for name in candidates)
-        if rate is not None
+    """The best-scoring candidate, None while the season is too young to tell them apart.
+
+    None is the useful answer early on: it leaves the caller on its configured default
+    rather than chasing whichever strategy got lucky in the opening week.
+    """
+    scored = [
+        (strategy, score)
+        for strategy, score in ((name, brier_score(name, season, season_type)) for name in candidates)
+        if score is not None
     ]
-    if not rated:
+    if not scored:
         return None
 
-    # max keeps the first of equal rates, so a tie falls to the order candidates came in
-    return max(rated, key=lambda pair: pair[1])[0]
+    # min keeps the first of equal scores, so a tie falls to the order candidates came in
+    return min(scored, key=lambda pair: pair[1])[0]

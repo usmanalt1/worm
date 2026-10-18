@@ -214,6 +214,54 @@ class PlayerAwards(models.Model):
         ]
 
 
+class PlayerInjury(models.Model):
+    # One row per listed player per day, appended rather than replaced, so a status can be
+    # reconstructed as of a past date. source_player_id is the feed's id, not an NBA one.
+    source_player_id = models.CharField(max_length=64)
+    player_name = models.CharField(max_length=100)
+    team_name = models.CharField(max_length=100, null=True, blank=True)
+    team_abbreviation = models.CharField(max_length=10, null=True, blank=True)
+    status = models.CharField(max_length=40, null=True, blank=True)
+    injury_type = models.CharField(max_length=100, null=True, blank=True)
+    return_date = models.DateField(null=True, blank=True)
+    comment = models.TextField(null=True, blank=True)
+    source_updated_at = models.DateTimeField(null=True, blank=True)
+    collected_date = models.DateField()
+    # Carried by the storage partition, as on every other raw table.
+    season = models.CharField(max_length=20, null=True, blank=True)
+    run_timestamp = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'player_injuries'
+        constraints = [
+            models.UniqueConstraint(
+                fields=["source_player_id", "collected_date"],
+                name="player_injuries_unique_player_day",
+            ),
+        ]
+
+
+class DraftHistory(models.Model):
+    # One row per drafted player. A pick is immutable, so this is reference data rather
+    # than a per-season snapshot; draft_year is the draft, season the one it fed.
+    player_id = models.IntegerField()
+    player_name = models.CharField(max_length=100, null=True, blank=True)
+    draft_year = models.IntegerField()
+    season = models.CharField(max_length=20, null=True, blank=True)
+    round_number = models.IntegerField(null=True, blank=True)
+    round_pick = models.IntegerField(null=True, blank=True)
+    overall_pick = models.IntegerField(null=True, blank=True)
+    draft_type = models.CharField(max_length=50, null=True, blank=True)
+    team_id = models.IntegerField(null=True, blank=True)
+    run_timestamp = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = 'draft_history'
+        constraints = [
+            models.UniqueConstraint(fields=["player_id"], name="draft_history_unique_player_id"),
+        ]
+
+
 class GameSchedule(models.Model):
     # Pulled ahead of tip-off, so unlike TeamStats this has rows for unplayed games.
     # game_status: 1=Scheduled, 2=Live, 3=Final.
@@ -643,3 +691,78 @@ class MartTeamGameForm(models.Model):
     class Meta:
         managed = False
         db_table = '"nba_marts"."mart_team_game_form"'
+
+
+class MartTeamStrength(models.Model):
+    """elo_pre is the rating going into the game, elo_post the one after it.
+
+    A game may only read its own _pre columns; the _post pair is what a *later* game
+    inherits. Regular season and playoffs, built by the team_strength Dagster asset
+    rather than dbt.
+    """
+    season = models.CharField(max_length=20)
+    # Composite grain, so not actually unique; Django just needs a single pk.
+    game_id = models.CharField(max_length=20, primary_key=True)
+    game_date = models.DateField(null=True, blank=True)
+    team_id = models.IntegerField()
+    is_home = models.IntegerField(null=True, blank=True)
+    elo_pre = models.FloatField(null=True, blank=True)
+    elo_post = models.FloatField(null=True, blank=True)
+    opponent_elo_pre = models.FloatField(null=True, blank=True)
+    margin = models.FloatField(null=True, blank=True)
+    adj_margin = models.FloatField(null=True, blank=True)
+    form_adj_margin = models.FloatField(null=True, blank=True)
+    form_adj_margin_post = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = '"nba_marts"."mart_team_strength"'
+
+
+class MartPlayerValue(models.Model):
+    """Per player-game box-score value, and the average of their previous 20 games.
+
+    value_pre crosses seasons on purpose, so a player carries a value into a new season
+    before playing a game in it. Null on a player's very first game.
+    """
+    season = models.CharField(max_length=20)
+    season_type = models.CharField(max_length=20, null=True, blank=True)
+    player_id = models.IntegerField()
+    team_id = models.IntegerField(null=True, blank=True)
+    # Composite grain with player_id, so not actually unique; Django needs a single pk.
+    game_id = models.CharField(max_length=20, primary_key=True)
+    game_date = models.DateField(null=True, blank=True)
+    minutes = models.FloatField(null=True, blank=True)
+    game_score = models.FloatField(null=True, blank=True)
+    value_pre = models.FloatField(null=True, blank=True)
+    minutes_pre = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = '"nba_marts"."mart_player_value"'
+
+
+class MartTeamScheduleLoad(models.Model):
+    """Travel and schedule load per team-game.
+
+    Measured against the team's previous venue, so 0 on its first game of a season.
+    road_trip_game is 0 at home and n on the nth consecutive away game.
+    """
+    season = models.CharField(max_length=20)
+    season_id = models.CharField(max_length=20, null=True, blank=True)
+    season_type = models.CharField(max_length=20, null=True, blank=True)
+    # Composite grain with team_id, so not actually unique; Django needs a single pk.
+    game_id = models.CharField(max_length=20, primary_key=True)
+    game_date = models.DateField(null=True, blank=True)
+    team_id = models.IntegerField()
+    is_home = models.IntegerField(null=True, blank=True)
+    venue_altitude_m = models.IntegerField(null=True, blank=True)
+    road_trip_game = models.IntegerField(null=True, blank=True)
+    games_prev_7d = models.IntegerField(null=True, blank=True)
+    travel_km = models.FloatField(null=True, blank=True)
+    tz_delta = models.IntegerField(null=True, blank=True)
+    altitude_gain = models.IntegerField(null=True, blank=True)
+
+    class Meta:
+        managed = False
+        db_table = '"nba_marts"."mart_team_schedule_load"'

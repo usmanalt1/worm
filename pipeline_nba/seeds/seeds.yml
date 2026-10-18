@@ -1,6 +1,24 @@
 version: 2
 
 seeds:
+  - name: team_locations
+    description: "Home-city coordinates, altitude and standard-time UTC offset per team.
+      City-level rather than exact arena, which is well inside the error that matters for
+      inter-city travel. Offsets are standard time: DST is not modelled, so a crossing
+      involving Phoenix is off by an hour in October and April."
+    config:
+      column_types:
+        team_id: integer
+        abbreviation: varchar(3)
+        latitude: double precision
+        longitude: double precision
+        altitude_m: integer
+        utc_offset_hours: integer
+    columns:
+      - name: team_id
+        data_tests: [unique, not_null]
+      - name: abbreviation
+        data_tests: [unique, not_null]
   - name: team_colours
     description: "Per-team brand colours. display_hex and alt_display_hex are lightened for
       Worm's dark panels, where primaries like Nuggets navy vanish. Re-run

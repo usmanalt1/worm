@@ -28,6 +28,8 @@ sources:
         identifier: player_awards
       - name: game_schedule
         description: "Full-season game schedule, including games that haven't been played yet"
+      - name: draft_history
+        description: "Every NBA draft pick, backfilled per draft year; immutable once held"
       - name: advanced_player_season_stats
         description: "Season-level advanced stats per player (leaguedashplayerstats, MeasureType=Advanced)"
       - name: advanced_team_season_stats

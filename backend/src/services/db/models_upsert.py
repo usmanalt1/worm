@@ -72,6 +72,12 @@ class TeamMatchups(TableModel):
 class GameSchedule(TableModel):
     unique_fields = ["game_id"]
 
+class DraftHistory(TableModel):
+    unique_fields = ["player_id"]
+
+class PlayerInjury(TableModel):
+    unique_fields = ["source_player_id", "collected_date"]
+
 class PlayerAwards(TableModel):
     # month/week because an award can repeat within a season; None for season-level awards.
     unique_fields = ["player_id", "season", "description", "all_nba_team_number", "month", "week"]
@@ -95,6 +101,8 @@ class TableModelFactory:
             "team_matchups": TeamMatchups(),
             "player_awards": PlayerAwards(),
             "game_schedule": GameSchedule(),
+            "draft_history": DraftHistory(),
+            "player_injuries": PlayerInjury(),
             "advanced_player_season_stats": AdvancedPlayerSeasonStats(),
             "advanced_team_season_stats": AdvancedTeamSeasonStats(),
             "dim_games": TableModel(),
@@ -102,5 +110,8 @@ class TableModelFactory:
             "fct_player_stats": TableModel(),
             "dim_rosters": TableModel(),
             "dim_teams": TableModel(),
+            "mart_team_strength": TableModel(),
+            "mart_team_schedule_load": TableModel(),
+            "mart_player_value": TableModel(),
         }
         return table_model.get(table)

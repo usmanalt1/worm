@@ -1,7 +1,9 @@
 from logging import getLogger
 from pathlib import Path
-from app.models import SeasonRecord, TeamInfo, PlayerInfo, TeamRoster, TeamStats, PlayerStats, TeamMatchups, PlayerAwards, GameSchedule, DimGames, FctTeamStats, FctPlayerStats, DimRosters, DimTeams, AdvancedPlayerSeasonStats, AdvancedTeamSeasonStats
+from app.models import SeasonRecord, TeamInfo, PlayerInfo, TeamRoster, TeamStats, PlayerStats, TeamMatchups, PlayerAwards, GameSchedule, DraftHistory, PlayerInjury, DimGames, FctTeamStats, FctPlayerStats, DimRosters, DimTeams, AdvancedPlayerSeasonStats, AdvancedTeamSeasonStats, MartTeamStrength, MartTeamScheduleLoad, MartPlayerValue
+from django.db import connections
 from sqlalchemy import create_engine
+from sqlalchemy.engine import URL
 import os
 from services.db.models_upsert import TableModelFactory
 from services.interface import StorageBase
@@ -23,6 +25,8 @@ class DBService(StorageBase):
             "team_matchups": TeamMatchups,
             "player_awards": PlayerAwards,
             "game_schedule": GameSchedule,
+            "draft_history": DraftHistory,
+            "player_injuries": PlayerInjury,
             "advanced_player_season_stats": AdvancedPlayerSeasonStats,
             "advanced_team_season_stats": AdvancedTeamSeasonStats,
             "dim_games": DimGames,
@@ -30,13 +34,30 @@ class DBService(StorageBase):
             "fct_player_stats": FctPlayerStats,
             "dim_rosters": DimRosters,
             "dim_teams": DimTeams,
+            "mart_team_strength": MartTeamStrength,
+            "mart_team_schedule_load": MartTeamScheduleLoad,
+            "mart_player_value": MartPlayerValue,
         }
-        self.user = os.getenv("DB_USER")
-        self.password = os.getenv("DB_PASSWORD")
-        self.db_name = os.getenv("DB_NAME")
-        self.postgres_host = os.getenv("DB_HOST")
-        self.engine = create_engine(f"postgresql://{self.user}:{self.password}@{self.postgres_host}:5432/{self.db_name}")
+        self.engine = self._engine_from_django()
         self.file_path_parent_name = os.getenv("FILE_PATH_PARENT_NAME")
+
+    @staticmethod
+    def _engine_from_django():
+        """SQLAlchemy engine onto whatever database Django is configured with, so the
+        pandas readers and the ORM can never address different databases."""
+        config = connections["default"].settings_dict
+        url = URL.create(
+            "postgresql+psycopg2",
+            username=config["USER"] or None,
+            password=config["PASSWORD"] or None,
+            host=config["HOST"] or None,
+            port=config["PORT"] or None,
+            database=config["NAME"],
+        )
+        # Neon requires TLS, and Django carries that in OPTIONS rather than the host.
+        sslmode = (config.get("OPTIONS") or {}).get("sslmode")
+
+        return create_engine(url, connect_args={"sslmode": sslmode} if sslmode else {})
 
     def _get_latest_files(self, run_id: str = None) -> dict:
         if settings.STORAGE == "gcs":

@@ -10,7 +10,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "backend" / "src"))
 
+from config.logger import get_logger  # noqa: E402
 from services.notifications.email_service import send_alert_email  # noqa: E402
+
+logger = get_logger(__name__)
 
 JOB_NAME = "nightly_pipeline"
 
@@ -35,10 +38,10 @@ def main() -> int:
         body += ["", f"Logs: {args.run_url}"]
 
     if not send_alert_email(subject, "\n".join(body)):
-        print("GMAIL_APP_PASSWORD unset; no alert sent.", file=sys.stderr)
+        logger.error("GMAIL_APP_PASSWORD unset; no alert sent.")
         return 1
 
-    print(f"Alert sent: {subject}")
+    logger.info("Alert sent: %s", subject)
     return 0
 
 

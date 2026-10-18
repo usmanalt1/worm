@@ -1,29 +1,33 @@
-WITH home AS (
+-- Matchup is the usual home/away signal, but a neutral-site game (NBA Cup in Las Vegas,
+-- the global games) reads '@' on both team logs, so the schedule's designated home team
+-- decides; matchup only covers games the schedule has not loaded.
+WITH sides AS (
     SELECT
-        game_id,
-        game_date,
-        season_id,
-        season,
-        team_id           AS home_team_id,
-        team_abbreviation AS home_team_abbreviation,
-        team_name         AS home_team_name,
-        wl                AS home_wl,
-        pts               AS home_pts,
-        run_timestamp
-    FROM {{ ref('stg_nba_team_logs') }}
-    WHERE matchup LIKE '%vs.%'
+        t.game_id,
+        t.game_date,
+        t.season_id,
+        t.season,
+        t.team_id,
+        t.team_abbreviation,
+        t.team_name,
+        t.wl,
+        t.pts,
+        t.run_timestamp,
+        CASE
+            WHEN t.team_id = s.home_team_id THEN TRUE
+            WHEN t.team_id = s.away_team_id THEN FALSE
+            ELSE COALESCE(t.matchup LIKE '%vs.%', FALSE)
+        END AS is_home
+    FROM {{ ref('stg_nba_team_logs') }} t
+    LEFT JOIN {{ ref('stg_nba_game_schedule') }} s ON s.game_id = t.game_id
 ),
-away AS (
+-- Ranked rather than filtered on is_home, so a game whose two logs agree on a side
+-- still produces one home and one away row instead of dropping out of the join.
+ranked AS (
     SELECT
-        game_id,
-        team_id           AS away_team_id,
-        team_abbreviation AS away_team_abbreviation,
-        team_name         AS away_team_name,
-        wl                AS away_wl,
-        pts               AS away_pts,
-        run_timestamp
-    FROM {{ ref('stg_nba_team_logs') }}
-    WHERE matchup LIKE '%@%'
+        sides.*,
+        ROW_NUMBER() OVER (PARTITION BY game_id ORDER BY is_home DESC, team_id) AS side
+    FROM sides
 ),
 played AS (
     SELECT
@@ -31,19 +35,21 @@ played AS (
         h.game_date,
         h.season_id,
         h.season,
-        h.home_team_id,
-        h.home_team_abbreviation,
-        h.home_team_name,
-        h.home_pts,
-        h.home_wl,
-        a.away_team_id,
-        a.away_team_abbreviation,
-        a.away_team_name,
-        a.away_pts,
-        a.away_wl,
-        a.run_timestamp
-    FROM home h
-    INNER JOIN away a ON h.game_id = a.game_id and h.run_timestamp = a.run_timestamp
+        h.team_id           AS home_team_id,
+        h.team_abbreviation AS home_team_abbreviation,
+        h.team_name         AS home_team_name,
+        h.pts               AS home_pts,
+        h.wl                AS home_wl,
+        a.team_id           AS away_team_id,
+        a.team_abbreviation AS away_team_abbreviation,
+        a.team_name         AS away_team_name,
+        a.pts               AS away_pts,
+        a.wl                AS away_wl,
+        -- The staging dedup is per team-game, so the two logs can land in different runs.
+        GREATEST(h.run_timestamp, a.run_timestamp) AS run_timestamp
+    FROM ranked h
+    INNER JOIN ranked a ON a.game_id = h.game_id AND a.side = 2
+    WHERE h.side = 1
 ),
 -- Scheduled games with no box score yet; excluded once played, so the real result wins.
 latest_season_id AS (
