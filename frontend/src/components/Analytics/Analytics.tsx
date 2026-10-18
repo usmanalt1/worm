@@ -1,103 +1,209 @@
-import { HomeTrends } from '../Home/HomeTrends';
-import { HomeMostImproved } from '../Home/HomeMostImproved';
-import { HomeTeamLeaders } from '../Home/HomeTeamLeaders';
-import { HomeModelComparison } from '../Home/HomeModelComparison';
+import { useMemo, type ReactNode } from 'react';
 import { SegmentedControl } from '@mantine/core';
-import { SeasonStandings } from './SeasonStandings';
-import { SectionHeader } from '../ui/SectionHeader';
 import { HeroStat, PageHero } from '../ui/PageHero';
+import { SectionHeader } from '../ui/SectionHeader';
+import { HomeMostImproved } from '../Home/HomeMostImproved';
+import { SeasonStandings } from './SeasonStandings';
+import { AnalyticsScatter } from './AnalyticsScatter';
+import { AnalyticsTable } from './AnalyticsTable';
+import { LeagueTrends } from './LeagueTrends';
+import { MetricLeaderboards } from './MetricLeaderboards';
+import { MetricPicker } from './MetricPicker';
+import { PresetRail } from './PresetRail';
+import { ScopeBar } from './ScopeBar';
+import { useAnalyticsQuery } from './useAnalyticsQuery';
+import { useAnalyticsRows } from '../../hooks/useAnalyticsRows';
 import { useViewDataFilters } from '../ViewData/ViewDataFiltersContext';
-import { STAGES, STAGE_TO_SEASON_TYPE, type Stage } from '../ViewData/stages';
-import { useStatsSeason } from '../../hooks/useStatsSeason';
-import { env } from '../../env';
+import type { AnalyticsView } from '../../types/analytics';
+import type { Stage } from '../ViewData/stages';
 
-function AnalyticsHero({ statsSeason }: { statsSeason: string | null }) {
+const VIEW_OPTIONS = [
+    { value: 'table', label: 'Table' },
+    { value: 'scatter', label: 'Scatter' },
+];
+
+function Section({ index, title, subtitle, meta, children }: {
+    index: string;
+    title: string;
+    subtitle: string;
+    meta?: ReactNode;
+    children: ReactNode;
+}) {
     return (
-        <PageHero
-            eyebrow="Season Breakdown"
-            title="Wormalytics"
-            blurb="Who led, who climbed, and which model actually held up over a full season of box scores."
-        >
-            <HeroStat label="Stats from" value={statsSeason ?? env.VITE_DEFAULT_SEASON ?? '—'} />
-        </PageHero>
+        <section style={{ marginBottom: 'var(--section-gap)' }}>
+            <SectionHeader index={index} title={title} subtitle={subtitle} meta={meta} />
+            {children}
+        </section>
     );
 }
 
-/** A postseason run is a handful of games, so a rank needs more than a cameo behind it. */
-const MIN_GAMES: Record<Stage, number> = { Regular: 0, Playoffs: 5, Preseason: 3 };
-
 export function Analytics() {
-    // Shared with View Data, so the stage follows you across the app.
-    const { selectedStage, setSelectedStage } = useViewDataFilters();
-    const seasonType = STAGE_TO_SEASON_TYPE[selectedStage];
-    const statsSeason = useStatsSeason(seasonType);
-    const minGames = MIN_GAMES[selectedStage];
+    // The stage still follows you to View Data, but the URL is what this page reads.
+    const { setSelectedStage } = useViewDataFilters();
 
-    const stage = (
-        <SegmentedControl
-            size="xs"
-            value={selectedStage}
-            onChange={(value) => setSelectedStage(value as Stage)}
-            data={STAGES}
-        />
+    const { query, seasons, setScope, setView, setMetrics, setAxes, setSeason, setStage, setMinGames, applyPreset } =
+        useAnalyticsQuery();
+
+    const seasonScope = query.scope === 'season';
+    const { rows, loading, error } = useAnalyticsRows(
+        query.entity,
+        seasonScope ? null : query.season,
+        query.seasonType,
     );
-    const label = statsSeason ? `${statsSeason} ${selectedStage.toLowerCase()}` : selectedStage.toLowerCase();
+
+    const qualified = useMemo(
+        () => rows.filter(row => (row.games_played ?? 0) >= query.minGames),
+        [rows, query.minGames],
+    );
+
+    const noun = query.entity === 'player' ? 'player' : 'team';
+    const stage = query.stage.toLowerCase();
+    const slice = `${query.season ?? ''} ${stage}`.trim();
+
+    const empty = error
+        ? error
+        : rows.length > 0
+            ? `No ${noun} has ${query.minGames}+ games in the ${slice}. Drop the minimum to see more.`
+            : `No ${noun} stats for the ${slice} yet.`;
+
+    const onStage = (next: Stage) => {
+        setStage(next);
+        setSelectedStage(next);
+    };
 
     return (
         <div style={{ width: '100%', maxWidth: 1400, margin: '0 auto', paddingBottom: 60 }}>
-            <AnalyticsHero statsSeason={statsSeason} />
-
-            <section style={{ marginBottom: 'var(--section-gap)' }}>
-                <SectionHeader
-                    index="01"
-                    title="Player Leaders"
-                    subtitle={`${label} averages, ranked`}
-                    meta={stage}
+            <PageHero
+                eyebrow="Build Your Own"
+                title="Wormalytics"
+                blurb="Pick a scope, a season and your own metrics. Every view is a URL, so the one you build is the one you can send."
+            >
+                <HeroStat
+                    label={seasonScope ? 'Scope' : `Qualified ${noun}s`}
+                    value={seasonScope ? 'League' : loading ? '—' : String(qualified.length)}
                 />
-                <HomeTrends season={statsSeason} seasonType={seasonType} minGames={minGames} />
-            </section>
+            </PageHero>
 
-            <section style={{ marginBottom: 'var(--section-gap)' }}>
-                <SectionHeader
+            <div style={{ marginTop: 20, marginBottom: 'var(--section-gap)' }}>
+                <ScopeBar
+                    query={query}
+                    seasons={seasons}
+                    onScope={setScope}
+                    onSeason={setSeason}
+                    onStage={onStage}
+                    onMinGames={setMinGames}
+                />
+            </div>
+
+            <Section
+                index="01"
+                title="Off the Shelf"
+                subtitle="A starting point you can nudge; changing anything leaves a view of your own"
+            >
+                <PresetRail
+                    active={query.preset}
+                    onApply={preset => applyPreset({
+                        // Clear what this preset doesn't set, so presets can't inherit each other.
+                        x: null, y: null, metrics: null,
+                        ...preset.params,
+                        preset: preset.id,
+                    })}
+                />
+            </Section>
+
+            {seasonScope ? (
+                <Section
                     index="02"
-                    title="Most Improved"
-                    subtitle={statsSeason ? `Biggest jumps in ${statsSeason} against the season before` : 'Biggest jumps against last season'}
-                />
-                <HomeMostImproved seasonType={seasonType} />
-            </section>
+                    title="League Trends"
+                    subtitle="How the league itself has changed, season by season"
+                >
+                    <LeagueTrends seasonType={query.seasonType} season={query.season} />
+                </Section>
+            ) : (
+                <>
+                    <Section
+                        index="02"
+                        title="Build Your View"
+                        subtitle="Every metric the warehouse holds; the first three feed the leaderboards"
+                        meta={
+                            <SegmentedControl
+                                size="xs"
+                                value={query.view}
+                                onChange={value => setView(value as AnalyticsView)}
+                                data={VIEW_OPTIONS}
+                            />
+                        }
+                    >
+                        <MetricPicker
+                            entity={query.entity}
+                            view={query.view}
+                            metrics={query.metrics}
+                            x={query.x}
+                            y={query.y}
+                            onMetrics={setMetrics}
+                            onAxes={setAxes}
+                        />
+                    </Section>
 
-            <section style={{ marginBottom: 'var(--section-gap)' }}>
-                <SectionHeader
-                    index="03"
-                    title="Team Leaders"
-                    subtitle={`${label} averages, ranked`}
-                    meta={stage}
-                />
-                <HomeTeamLeaders season={statsSeason} seasonType={seasonType} minGames={minGames} />
-            </section>
+                    <Section
+                        index="03"
+                        title={query.entity === 'player' ? 'Players' : 'Teams'}
+                        subtitle={
+                            query.view === 'scatter'
+                                ? `Each ${noun} in the ${slice}, plotted on your two axes`
+                                : `Your metrics for the ${slice}, sortable on any column`
+                        }
+                    >
+                        {query.view === 'scatter' ? (
+                            <AnalyticsScatter
+                                rows={qualified}
+                                entity={query.entity}
+                                x={query.x}
+                                y={query.y}
+                                empty={empty}
+                            />
+                        ) : (
+                            <AnalyticsTable
+                                rows={qualified}
+                                metrics={query.metrics}
+                                entity={query.entity}
+                                loading={loading}
+                                empty={empty}
+                            />
+                        )}
+                    </Section>
 
-            <section style={{ marginBottom: 'var(--section-gap)' }}>
-                <SectionHeader
-                    index="04"
-                    title="Standings"
-                    subtitle={
-                        selectedStage === 'Playoffs'
-                            ? `Every team that made the ${statsSeason ?? ''} postseason, by how far they went`
-                            : `The ${label} table, sortable on any column`
-                    }
-                    meta={stage}
-                />
-                <SeasonStandings season={statsSeason} seasonType={seasonType} stageLabel={selectedStage} />
-            </section>
+                    <Section
+                        index="04"
+                        title="Leaders"
+                        subtitle={`The first three metrics you picked, ranked over the ${slice}`}
+                    >
+                        <MetricLeaderboards rows={qualified} metrics={query.metrics} empty={empty} />
+                    </Section>
 
-            <section>
-                <SectionHeader
-                    index="05"
-                    title="Model Bench"
-                    subtitle="Every run held against the same four metrics"
-                />
-                <HomeModelComparison />
-            </section>
+                    <Section
+                        index="05"
+                        title="Most Improved"
+                        subtitle="Biggest jumps against the season before"
+                    >
+                        <HomeMostImproved seasonType={query.seasonType} />
+                    </Section>
+
+                    {query.entity === 'team' && (
+                        <Section
+                            index="06"
+                            title="Standings"
+                            subtitle={`The ${slice} table, sortable on any column`}
+                        >
+                            <SeasonStandings
+                                season={query.season}
+                                seasonType={query.seasonType}
+                                stageLabel={query.stage}
+                            />
+                        </Section>
+                    )}
+                </>
+            )}
         </div>
     );
 }

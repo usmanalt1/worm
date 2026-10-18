@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { apiFetch } from '../lib/api';
 import { CLASH_DISTANCE, chipText, rgbDistance } from '../lib/colour';
 
@@ -147,6 +147,12 @@ export function TeamColoursProvider({ children }: { children: ReactNode }) {
 export function useTeam(key: TeamKey): TeamColours | null {
     const lookups = useContext(TeamColoursContext);
     return useMemo(() => (lookups ? resolve(lookups, key) : null), [lookups, key]);
+}
+
+/** For lists and charts, where a hook call per row isn't possible. */
+export function useTeamResolver(): (key: TeamKey) => TeamColours | null {
+    const lookups = useContext(TeamColoursContext);
+    return useCallback((key: TeamKey) => (lookups ? resolve(lookups, key) : null), [lookups]);
 }
 
 /** Both sides of a matchup, with the clash swap and the --away/--home fallbacks applied. */
