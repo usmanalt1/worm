@@ -1,5 +1,8 @@
 import { Select, Tooltip } from '@mantine/core';
-import { metricSpec, metricsForEntity, type MetricKey, type MetricSpec } from '../../lib/metrics';
+import {
+    METRIC_GROUPS, metricSpec, metricsForEntity,
+    type MetricGroup, type MetricKey, type MetricSpec,
+} from '../../lib/metrics';
 import type { AnalyticsView } from '../../types/analytics';
 
 interface MetricPickerProps {
@@ -12,10 +15,15 @@ interface MetricPickerProps {
     onAxes: (x: MetricKey, y: MetricKey) => void;
 }
 
-const GROUP_LABELS: Record<'box' | 'advanced', string> = {
+const GROUP_LABELS: Record<MetricGroup, string> = {
     box: 'Box score',
     advanced: 'Advanced',
+    derived: 'Derived',
 };
+
+function groupsPresent(specs: MetricSpec[]): MetricGroup[] {
+    return METRIC_GROUPS.filter(group => specs.some(spec => spec.group === group));
+}
 
 function Chip({ spec, selected, onClick }: { spec: MetricSpec; selected: boolean; onClick: () => void }) {
     return (
@@ -46,7 +54,7 @@ function Chip({ spec, selected, onClick }: { spec: MetricSpec; selected: boolean
 }
 
 function axisData(specs: MetricSpec[]) {
-    return (['box', 'advanced'] as const).map(group => ({
+    return groupsPresent(specs).map(group => ({
         group: GROUP_LABELS[group],
         items: specs.filter(spec => spec.group === group).map(spec => ({
             value: spec.key,
@@ -66,7 +74,7 @@ export function MetricPicker({ entity, view, metrics, x, y, onMetrics, onAxes }:
         onMetrics(selected.has(key) ? metrics.filter(m => m !== key) : [...metrics, key]);
     };
 
-    const yInverted = !(metricSpec(y)?.higherIsBetter ?? true);
+    const yInverted = metricSpec(y)?.higherIsBetter === false;
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
@@ -99,7 +107,7 @@ export function MetricPicker({ entity, view, metrics, x, y, onMetrics, onAxes }:
                 </div>
             )}
 
-            {(['box', 'advanced'] as const).map(group => (
+            {groupsPresent(specs).map(group => (
                 <div key={group}>
                     <div className="kicker" style={{ marginBottom: 10, color: 'var(--paper-faint)' }}>
                         {GROUP_LABELS[group]}

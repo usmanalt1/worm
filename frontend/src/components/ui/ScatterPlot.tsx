@@ -24,7 +24,7 @@ interface ScatterPlotProps {
 
 const VIEW_W = 820;
 const VIEW_H = 460;
-const PAD = { top: 16, right: 18, bottom: 44, left: 56 };
+const PAD = { top: 16, right: 18, bottom: 44, left: 86 };
 const TICKS = 4;
 const DOT_R = 5;
 
@@ -102,7 +102,7 @@ export function ScatterPlot({
                             y1={toY(value)} y2={toY(value)}
                             stroke="var(--line)" strokeWidth={1}
                         />
-                        <text x={PAD.left - 8} y={toY(value)} textAnchor="end" dominantBaseline="middle" style={tickText}>
+                        <text x={PAD.left - 12} y={toY(value)} textAnchor="end" dominantBaseline="middle" style={tickText}>
                             {formatY(value)}
                         </text>
                     </g>
@@ -161,7 +161,7 @@ export function ScatterPlot({
                 </text>
                 <text
                     x={0} y={0} textAnchor="middle" style={tickText}
-                    transform={`translate(14, ${PAD.top + PLOT_H / 2}) rotate(-90)`}
+                    transform={`translate(16, ${PAD.top + PLOT_H / 2}) rotate(-90)`}
                 >
                     {`${yLabel}${invertY ? ' (inverted)' : ''}`.toUpperCase()}
                 </text>

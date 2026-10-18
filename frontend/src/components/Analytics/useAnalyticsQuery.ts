@@ -12,7 +12,7 @@ import type { AnalyticsScope, AnalyticsView } from '../../types/analytics';
 export const MIN_GAMES: Record<Stage, number> = { Regular: 20, Playoffs: 5, Preseason: 3 };
 
 const SCOPES: AnalyticsScope[] = ['player', 'team', 'season'];
-const VIEWS: AnalyticsView[] = ['table', 'scatter'];
+const VIEWS: AnalyticsView[] = ['table', 'scatter', 'factors'];
 
 const DEFAULT_METRICS: Record<'player' | 'team', MetricKey[]> = {
     player: ['average_points', 'average_rebounds', 'average_assists', 'true_shooting_percentage', 'usage_percentage'],
@@ -51,6 +51,12 @@ function axis(raw: string | null, entity: 'player' | 'team', fallback: MetricKey
     return spec.entity === 'player' && entity === 'team' ? fallback : spec.key;
 }
 
+function view(raw: string | null, entity: 'player' | 'team'): AnalyticsView {
+    const requested = oneOf(raw, VIEWS, 'table');
+    // The four factors are a team framework; there is no player equivalent.
+    return requested === 'factors' && entity === 'player' ? 'table' : requested;
+}
+
 /**
  * The page's whole state, parsed from the URL and validated, so a hand-edited address
  * falls back rather than crashing. Every setter writes back to the URL.
@@ -82,7 +88,10 @@ export function useAnalyticsQuery() {
         const requested = parseMetricKeys(params.get('metrics'), DEFAULT_METRICS[entity]);
         const metrics = requested.filter(key => allowed.has(key));
 
-        const rawFloor = Number(params.get('min_games'));
+        // Number(null) and Number('') are both 0, so an absent floor has to be caught
+        // before parsing or the per-stage default never applies.
+        const rawFloor = params.get('min_games');
+        const floor = rawFloor ? Number(rawFloor) : Number.NaN;
         const requestedSeason = params.get('season');
 
         return {
@@ -94,8 +103,8 @@ export function useAnalyticsQuery() {
                 : seasons[0] ?? null,
             stage,
             seasonType: stage.toLowerCase(),
-            minGames: Number.isFinite(rawFloor) && rawFloor >= 0 ? Math.floor(rawFloor) : MIN_GAMES[stage],
-            view: oneOf(params.get('view'), VIEWS, 'table'),
+            minGames: Number.isFinite(floor) && floor >= 0 ? Math.floor(floor) : MIN_GAMES[stage],
+            view: view(params.get('view'), entity),
             metrics: metrics.length > 0 ? metrics : DEFAULT_METRICS[entity],
             x: axis(params.get('x'), entity, DEFAULT_AXES[entity].x),
             y: axis(params.get('y'), entity, DEFAULT_AXES[entity].y),

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api';
-import { ADVANCED_ONLY_KEYS } from '../lib/metrics';
+import { ADVANCED_ONLY_KEYS, DERIVED_KEYS, hasDerived, type DerivedKey, type MetricKey } from '../lib/metrics';
 import type { AdvancedOnlyKey, AnalyticsRow } from '../types/analytics';
 import type { SeasonPlayerStats } from '../types/player';
 import type { SeasonTeamStats } from '../types/team';
@@ -49,13 +49,50 @@ function fillGaps(base: AnalyticsRow, advanced: AdvancedRow | undefined): Analyt
     return { ...base, ...gaps, team };
 }
 
-async function fetchRows(entity: Entity, season: string, seasonType: string, signal: AbortSignal): Promise<AnalyticsRow[]> {
+type DerivedRow = Record<string, unknown>;
+
+const DERIVED: Record<Entity, { path: string; idKey: string }> = {
+    player: { path: 'player_volatility', idKey: 'player_id' },
+    team: { path: 'team_context', idKey: 'team_id' },
+};
+
+/** Derived metrics have their own endpoint per entity, keyed on that entity's id. */
+async function fetchDerived(entity: Entity, season: string, seasonType: string, signal: AbortSignal): Promise<Map<number, DerivedRow>> {
+    const { path, idKey } = DERIVED[entity];
+    const query = `season=${encodeURIComponent(season)}&season_type=${encodeURIComponent(seasonType)}`;
+    const body = await apiFetch(`/api/nba/analytics/${path}?${query}`, { signal }).then(r => r.json());
+    const records: DerivedRow[] = body?.success && Array.isArray(body.records) ? body.records : [];
+    return new Map(records.flatMap(row => (typeof row[idKey] === 'number' ? [[row[idKey] as number, row]] : [])));
+}
+
+function attachDerived(base: AnalyticsRow, extra: DerivedRow | undefined): AnalyticsRow {
+    if (!extra) return base;
+
+    const values: Partial<Record<DerivedKey, number | null>> = {};
+    for (const key of DERIVED_KEYS) {
+        if (key in extra) values[key] = typeof extra[key] === 'number' ? (extra[key] as number) : null;
+    }
+    const gamesRated = typeof extra.games_rated === 'number' ? extra.games_rated : null;
+
+    return { ...base, ...values, games_rated: gamesRated };
+}
+
+async function fetchRows(
+    entity: Entity,
+    season: string,
+    seasonType: string,
+    withDerived: boolean,
+    signal: AbortSignal,
+): Promise<AnalyticsRow[]> {
     const { basic, advanced } = ENDPOINTS[entity];
     const query = `season_name=${encodeURIComponent(season)}&season_type=${encodeURIComponent(seasonType)}`;
 
-    const [basicRows, advancedRows] = await Promise.all([
+    const [basicRows, advancedRows, derived] = await Promise.all([
         apiFetch(`/api/nba/db/${basic}?${query}`, { signal }).then(r => r.json()),
         apiFetch(`/api/nba/db/${advanced}?${query}`, { signal }).then(r => r.json()),
+        withDerived
+            ? fetchDerived(entity, season, seasonType, signal)
+            : Promise.resolve(new Map<number, DerivedRow>()),
     ]);
 
     if (!Array.isArray(basicRows)) return [];
@@ -66,17 +103,28 @@ async function fetchRows(entity: Entity, season: string, seasonType: string, sig
         ),
     );
 
-    return entity === 'player'
-        ? basicRows.map((row: SeasonPlayerStats) => fillGaps(playerBase(row), byId.get(row.player_id)))
-        : basicRows.map((row: SeasonTeamStats) => fillGaps(teamBase(row), byId.get(row.team_id)));
+    if (entity === 'team') {
+        return basicRows.map((row: SeasonTeamStats) =>
+            attachDerived(fillGaps(teamBase(row), byId.get(row.team_id)), derived.get(row.team_id)));
+    }
+
+    return basicRows.map((row: SeasonPlayerStats) =>
+        attachDerived(fillGaps(playerBase(row), byId.get(row.player_id)), derived.get(row.player_id)));
 }
 
 /**
  * Every metric in the registry for one entity-season, from the two endpoints merged.
  * `loading` is derived from the request key, so a stale season's rows never read as settled.
  */
-export function useAnalyticsRows(entity: Entity, season: string | null, seasonType: string) {
-    const key = `${entity}|${season}|${seasonType}`;
+export function useAnalyticsRows(
+    entity: Entity,
+    season: string | null,
+    seasonType: string,
+    metrics: readonly MetricKey[] = [],
+) {
+    // Only fetch the extra endpoint when a derived metric is actually on screen.
+    const withDerived = hasDerived(metrics);
+    const key = `${entity}|${season}|${seasonType}|${withDerived}`;
     const [loaded, setLoaded] = useState<Loaded | null>(null);
 
     useEffect(() => {
@@ -85,7 +133,7 @@ export function useAnalyticsRows(entity: Entity, season: string | null, seasonTy
         let cancelled = false;
         const controller = new AbortController();
 
-        fetchRows(entity, season, seasonType, controller.signal)
+        fetchRows(entity, season, seasonType, withDerived, controller.signal)
             .then(rows => { if (!cancelled) setLoaded({ key, rows, error: null }); })
             .catch((error: Error) => {
                 if (cancelled || error.name === 'AbortError') return;
@@ -93,7 +141,7 @@ export function useAnalyticsRows(entity: Entity, season: string | null, seasonTy
             });
 
         return () => { cancelled = true; controller.abort(); };
-    }, [key, entity, season, seasonType]);
+    }, [key, entity, season, seasonType, withDerived]);
 
     const settled = loaded?.key === key;
     return {

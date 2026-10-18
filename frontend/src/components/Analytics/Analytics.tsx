@@ -6,6 +6,7 @@ import { HomeMostImproved } from '../Home/HomeMostImproved';
 import { SeasonStandings } from './SeasonStandings';
 import { AnalyticsScatter } from './AnalyticsScatter';
 import { AnalyticsTable } from './AnalyticsTable';
+import { FourFactors } from './FourFactors';
 import { LeagueTrends } from './LeagueTrends';
 import { MetricLeaderboards } from './MetricLeaderboards';
 import { MetricPicker } from './MetricPicker';
@@ -21,6 +22,7 @@ const VIEW_OPTIONS = [
     { value: 'table', label: 'Table' },
     { value: 'scatter', label: 'Scatter' },
 ];
+const TEAM_VIEW_OPTIONS = [...VIEW_OPTIONS, { value: 'factors', label: 'Factors' }];
 
 function Section({ index, title, subtitle, meta, children }: {
     index: string;
@@ -45,10 +47,19 @@ export function Analytics() {
         useAnalyticsQuery();
 
     const seasonScope = query.scope === 'season';
+    const factorsView = query.view === 'factors';
+    // The axes can name a metric the chips do not, and a derived axis still needs
+    // its endpoint fetched or the plot comes back empty.
+    const activeMetrics = useMemo(
+        () => (query.view === 'scatter' ? [...query.metrics, query.x, query.y] : query.metrics),
+        [query.view, query.metrics, query.x, query.y],
+    );
+
     const { rows, loading, error } = useAnalyticsRows(
         query.entity,
         seasonScope ? null : query.season,
         query.seasonType,
+        activeMetrics,
     );
 
     const qualified = useMemo(
@@ -65,6 +76,15 @@ export function Analytics() {
         : rows.length > 0
             ? `No ${noun} has ${query.minGames}+ games in the ${slice}. Drop the minimum to see more.`
             : `No ${noun} stats for the ${slice} yet.`;
+
+    const viewToggle = (
+        <SegmentedControl
+            size="xs"
+            value={query.view}
+            onChange={value => setView(value as AnalyticsView)}
+            data={query.entity === 'team' ? TEAM_VIEW_OPTIONS : VIEW_OPTIONS}
+        />
+    );
 
     const onStage = (next: Stage) => {
         setStage(next);
@@ -121,68 +141,74 @@ export function Analytics() {
                 </Section>
             ) : (
                 <>
-                    <Section
-                        index="02"
-                        title="Build Your View"
-                        subtitle="Every metric the warehouse holds; the first three feed the leaderboards"
-                        meta={
-                            <SegmentedControl
-                                size="xs"
-                                value={query.view}
-                                onChange={value => setView(value as AnalyticsView)}
-                                data={VIEW_OPTIONS}
-                            />
-                        }
-                    >
-                        <MetricPicker
-                            entity={query.entity}
-                            view={query.view}
-                            metrics={query.metrics}
-                            x={query.x}
-                            y={query.y}
-                            onMetrics={setMetrics}
-                            onAxes={setAxes}
-                        />
-                    </Section>
+                    {factorsView ? (
+                        <Section
+                            index="02"
+                            title="Four Factors"
+                            subtitle={`What actually decides games, and what each team is worst at, ${slice}`}
+                            meta={viewToggle}
+                        >
+                            <FourFactors rows={qualified} loading={loading} empty={empty} />
+                        </Section>
+                    ) : (
+                        <>
+                            <Section
+                                index="02"
+                                title="Build Your View"
+                                subtitle="Every metric the warehouse holds; the first three feed the leaderboards"
+                                meta={viewToggle}
+                            >
+                                <MetricPicker
+                                    entity={query.entity}
+                                    view={query.view}
+                                    metrics={query.metrics}
+                                    x={query.x}
+                                    y={query.y}
+                                    onMetrics={setMetrics}
+                                    onAxes={setAxes}
+                                />
+                            </Section>
+
+                            <Section
+                                index="03"
+                                title={query.entity === 'player' ? 'Players' : 'Teams'}
+                                subtitle={
+                                    query.view === 'scatter'
+                                        ? `Each ${noun} in the ${slice}, plotted on your two axes`
+                                        : `Your metrics for the ${slice}, sortable on any column`
+                                }
+                            >
+                                {query.view === 'scatter' ? (
+                                    <AnalyticsScatter
+                                        rows={qualified}
+                                        entity={query.entity}
+                                        x={query.x}
+                                        y={query.y}
+                                        empty={empty}
+                                    />
+                                ) : (
+                                    <AnalyticsTable
+                                        rows={qualified}
+                                        metrics={query.metrics}
+                                        entity={query.entity}
+                                        loading={loading}
+                                        empty={empty}
+                                    />
+                                )}
+                            </Section>
+
+                            <Section
+                                index="04"
+                                title="Leaders"
+                                subtitle={`The first three metrics you picked, ranked over the ${slice}`}
+                            >
+                                <MetricLeaderboards rows={qualified} metrics={query.metrics} empty={empty} />
+                            </Section>
+                        </>
+                    )}
 
                     <Section
-                        index="03"
-                        title={query.entity === 'player' ? 'Players' : 'Teams'}
-                        subtitle={
-                            query.view === 'scatter'
-                                ? `Each ${noun} in the ${slice}, plotted on your two axes`
-                                : `Your metrics for the ${slice}, sortable on any column`
-                        }
-                    >
-                        {query.view === 'scatter' ? (
-                            <AnalyticsScatter
-                                rows={qualified}
-                                entity={query.entity}
-                                x={query.x}
-                                y={query.y}
-                                empty={empty}
-                            />
-                        ) : (
-                            <AnalyticsTable
-                                rows={qualified}
-                                metrics={query.metrics}
-                                entity={query.entity}
-                                loading={loading}
-                                empty={empty}
-                            />
-                        )}
-                    </Section>
-
-                    <Section
-                        index="04"
-                        title="Leaders"
-                        subtitle={`The first three metrics you picked, ranked over the ${slice}`}
-                    >
-                        <MetricLeaderboards rows={qualified} metrics={query.metrics} empty={empty} />
-                    </Section>
-
-                    <Section
-                        index="05"
+                        index={factorsView ? '03' : '05'}
                         title="Most Improved"
                         subtitle="Biggest jumps against the season before"
                     >
@@ -191,7 +217,7 @@ export function Analytics() {
 
                     {query.entity === 'team' && (
                         <Section
-                            index="06"
+                            index={factorsView ? '04' : '06'}
                             title="Standings"
                             subtitle={`The ${slice} table, sortable on any column`}
                         >

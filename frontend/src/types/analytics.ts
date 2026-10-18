@@ -6,10 +6,20 @@ export type AdvancedOnly = Omit<AdvancedAverages, 'games_played' | 'average_minu
 export type AdvancedOnlyKey = keyof AdvancedOnly;
 
 export type AnalyticsScope = 'player' | 'team' | 'season';
-export type AnalyticsView = 'table' | 'scatter';
+export type AnalyticsView = 'table' | 'scatter' | 'factors';
+
+/** Metrics with their own endpoint, present only when one is selected. */
+export interface DerivedMetrics {
+    volatility: number | null;
+    team_elo: number | null;
+    opponent_elo: number | null;
+    adj_margin: number | null;
+    /** Games behind the derived metric, which can be fewer than games_played. */
+    games_rated: number | null;
+}
 
 /** One entity-season, box score merged with advanced. Advanced may be absent. */
-export interface AnalyticsRow extends BoxScoreAverages, Partial<AdvancedOnly> {
+export interface AnalyticsRow extends BoxScoreAverages, Partial<AdvancedOnly>, Partial<DerivedMetrics> {
     id: number;
     name: string;
     /** Colour key: an abbreviation for players, a team id for teams. */

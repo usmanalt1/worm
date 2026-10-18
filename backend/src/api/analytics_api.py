@@ -9,13 +9,18 @@ from services.analytics.player_stats import PlayerStats
 from services.analytics.team_stats import TeamStats
 from services.analytics.most_improved import MostImprovedPlayers, MostImprovedTeams
 from services.analytics.season_stats import league_trends
+from services.analytics.team_context import team_context
+from services.analytics.volatility import player_volatility
 from app.models import (
     DimPlayers, FctPlayerStats, DimSeasons, DimTeams, DimGames, DimRosters, FctTeamStats,
     MartPlayerGameForm, MartTeamGameForm,
 )
 from django.db.models import Count
 from services.redis.redis_client import RedisClient
-from services.redis.redis_key_constants import hot_and_cold_cache_key, league_trends_cache_key
+from services.redis.redis_key_constants import (
+    hot_and_cold_cache_key, league_trends_cache_key, player_volatility_cache_key,
+    team_context_cache_key,
+)
 from ninja_jwt.authentication import AsyncJWTAuth
 
 router = Router(auth=AsyncJWTAuth(), tags=["analytics"])
@@ -361,4 +366,79 @@ async def get_league_trends(
         return await db_thread(sync_get)
     except Exception as e:
         logger.error(f"Error fetching league trends: {e}")
+        return NBADataResponseSchema(success=False, error=str(e))
+
+
+PLAYER_VOLATILITY_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+
+@router.get("/player_volatility", response=NBADataResponseSchema)
+async def get_player_volatility(
+    request,
+    season: str,
+    season_type: Literal["regular", "playoffs", "preseason"] = "regular",
+    refresh: bool = False,
+):
+    """Per-player game-to-game swing in output. Empty outside the regular season, which
+    is the only one mart_player_volatility covers."""
+    cache_key = player_volatility_cache_key(season, season_type)
+
+    try:
+        def sync_get():
+            cache = RedisClient()
+            if not refresh:
+                try:
+                    cached = cache.get(cache_key)
+                    if cached:
+                        return NBADataResponseSchema(**cached)
+                except Exception:
+                    logger.exception("player_volatility cache read failed, reading from the DB")
+
+            payload = {"success": True, "records": player_volatility(season, season_type)}
+            try:
+                cache.set(cache_key, payload, ex=PLAYER_VOLATILITY_CACHE_TTL_SECONDS)
+            except Exception:
+                logger.exception("player_volatility cache write failed")
+            return NBADataResponseSchema(**payload)
+
+        return await db_thread(sync_get)
+    except Exception as e:
+        logger.error(f"Error fetching player volatility: {e}")
+        return NBADataResponseSchema(success=False, error=str(e))
+
+
+TEAM_CONTEXT_CACHE_TTL_SECONDS = 24 * 60 * 60
+
+
+@router.get("/team_context", response=NBADataResponseSchema)
+async def get_team_context(
+    request,
+    season: str,
+    season_type: Literal["regular", "playoffs", "preseason"] = "regular",
+    refresh: bool = False,
+):
+    """Per-team Elo, strength of schedule and schedule-adjusted margin."""
+    cache_key = team_context_cache_key(season, season_type)
+
+    try:
+        def sync_get():
+            cache = RedisClient()
+            if not refresh:
+                try:
+                    cached = cache.get(cache_key)
+                    if cached:
+                        return NBADataResponseSchema(**cached)
+                except Exception:
+                    logger.exception("team_context cache read failed, reading from the DB")
+
+            payload = {"success": True, "records": team_context(season, season_type)}
+            try:
+                cache.set(cache_key, payload, ex=TEAM_CONTEXT_CACHE_TTL_SECONDS)
+            except Exception:
+                logger.exception("team_context cache write failed")
+            return NBADataResponseSchema(**payload)
+
+        return await db_thread(sync_get)
+    except Exception as e:
+        logger.error(f"Error fetching team context: {e}")
         return NBADataResponseSchema(success=False, error=str(e))

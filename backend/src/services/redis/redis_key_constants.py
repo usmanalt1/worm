@@ -25,3 +25,11 @@ def hot_and_cold_cache_key(season: str, season_type: str, limit: int) -> str:
 def league_trends_cache_key(season_type: str) -> str:
     """Versioned: an unversioned key served a previous build's payload shape for a day."""
     return f"league_trends_v1_{season_type}"
+
+
+def player_volatility_cache_key(season: str, season_type: str) -> str:
+    return f"player_volatility_v1_{season}_{season_type}"
+
+
+def team_context_cache_key(season: str, season_type: str) -> str:
+    return f"team_context_v1_{season}_{season_type}"

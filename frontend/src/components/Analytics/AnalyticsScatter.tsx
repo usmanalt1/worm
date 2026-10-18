@@ -41,16 +41,22 @@ export function AnalyticsScatter({ rows, entity, x, y, empty }: AnalyticsScatter
     }
 
     const noun = entity === 'player' ? 'player' : 'team';
+    // A neutral metric has no better end, so the plot cannot claim one.
+    const oriented = xSpec.higherIsBetter !== null && ySpec.higherIsBetter !== null;
 
     return (
         <ScatterPlot
             points={points}
             xLabel={xSpec.title}
             yLabel={ySpec.title}
-            invertY={!ySpec.higherIsBetter}
+            invertY={ySpec.higherIsBetter === false}
             formatX={value => formatMetric(value, xSpec.kind)}
             formatY={value => formatMetric(value, ySpec.kind)}
-            caption={`Each dot is a ${noun}; dashed lines are the league medians. Up and right is better. Hover a dot for its numbers.`}
+            caption={
+                `Each dot is a ${noun}; dashed lines are the league medians.`
+                + (oriented ? ' Up and right is better.' : '')
+                + ' Hover a dot for its numbers.'
+            }
             empty={empty}
         />
     );
