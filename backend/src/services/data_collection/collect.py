@@ -31,6 +31,7 @@ if _NBA_PROXY:
     nba_http.PROXY = _NBA_PROXY
     logging.getLogger(__name__).info("Routing stats.nba.com requests through NBA_PROXY")
 
+SHOOTING_PCT_COLS = ["fg_pct", "fg3_pct", "ft_pct"]
 
 class CollectRawNBAData(TransformHelper, Constants):
 
@@ -114,7 +115,8 @@ class CollectRawNBAData(TransformHelper, Constants):
             ]
             df_player_logs = pd.concat(player_log_frames, ignore_index=True)
             df_player_logs = df_player_logs.drop_duplicates(subset=["game_id", "player_id"], keep="last")
-            df_player_logs = df_player_logs.dropna()
+            df_player_logs[SHOOTING_PCT_COLS] = df_player_logs[SHOOTING_PCT_COLS].fillna(0)
+            df_player_logs = df_player_logs.dropna(subset=["game_id", "player_id", "team_id"])
             df_team_matchups = self._get_team_matchups(team_roster=df_teams, season_year=season_year)
 
             nba_data_dict = {
