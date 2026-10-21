@@ -1,6 +1,6 @@
 from nba_api.stats.endpoints import scoreboardv2
-from nba_api.stats.static import players, teams
-from nba_api.stats.endpoints import commonteamroster
+from nba_api.stats.static import teams
+from nba_api.stats.endpoints import commonallplayers, commonteamroster
 from nba_api.stats.endpoints import teamgamelog
 import pandas as pd
 from services.data_collection.transformer_helper import TransformHelper
@@ -31,6 +31,7 @@ if _NBA_PROXY:
     nba_http.PROXY = _NBA_PROXY
     logging.getLogger(__name__).info("Routing stats.nba.com requests through NBA_PROXY")
 
+SHOOTING_PCT_COLS = ["fg_pct", "fg3_pct", "ft_pct"]
 
 class CollectRawNBAData(TransformHelper, Constants):
 
@@ -92,7 +93,7 @@ class CollectRawNBAData(TransformHelper, Constants):
 
             df_season = self._get_season_record(season_id=season_id)
             df_teams = self._get_team_info()
-            df_players = self._get_players_info()
+            df_players = self._get_players_info(season_year=season_year)
             # Without preseason, those games sit in dim_games with no result forever.
             log_season_types = [
                 SeasonType.default,
@@ -114,7 +115,8 @@ class CollectRawNBAData(TransformHelper, Constants):
             ]
             df_player_logs = pd.concat(player_log_frames, ignore_index=True)
             df_player_logs = df_player_logs.drop_duplicates(subset=["game_id", "player_id"], keep="last")
-            df_player_logs = df_player_logs.dropna()
+            df_player_logs[SHOOTING_PCT_COLS] = df_player_logs[SHOOTING_PCT_COLS].fillna(0)
+            df_player_logs = df_player_logs.dropna(subset=["game_id", "player_id", "team_id"])
             df_team_matchups = self._get_team_matchups(team_roster=df_teams, season_year=season_year)
 
             nba_data_dict = {
@@ -234,11 +236,27 @@ class CollectRawNBAData(TransformHelper, Constants):
         logging.info("...Raw Team Game Logs DF Generated")
         return df_all_team_logs
 
-    def _get_players_info(self) -> pd.DataFrame:
-        df_players = pd.DataFrame(players.get_active_players())
-        df_players = self.clean_dataframe(df_players)
-        df_players = df_players.loc[df_players["is_active"] == True]
-        df_players["season_id"] = int(self.season_id)
+    def _get_players_info(self, season_year: str) -> pd.DataFrame:
+        """Every player the league lists for the season, from the live endpoint."""
+        raw = self.clean_dataframe(
+            commonallplayers.CommonAllPlayers(
+                season=season_year,
+                is_only_current_season=1,
+                headers=self.headers,
+                timeout=60,
+            ).get_data_frames()[0]
+        )
+        # "Last, First" splits on the comma; a full name split on spaces would put a
+        # suffix like "Jr." in the wrong field.
+        names = raw["display_last_comma_first"].astype(str).str.split(", ", n=1, expand=True)
+        df_players = pd.DataFrame({
+            "id": raw["person_id"],
+            "full_name": raw["display_first_last"],
+            "first_name": names[1].fillna(""),
+            "last_name": names[0].fillna(""),
+            "is_active": raw["rosterstatus"] == 1,
+            "season_id": int(self.season_id),
+        })
 
         logging.info("...Raw Player Info DF Generated")
         return df_players

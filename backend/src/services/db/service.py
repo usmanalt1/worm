@@ -107,8 +107,16 @@ class Service:
 
     def get_latest_games(self, season: str, season_type: str) -> list:
         dim_games_model: DimGames = self.model
+        # This model holds the whole season, and a game with no result yet has null
+        # scores - including games tipping off tonight alongside ones already final.
+        played = dim_games_model.objects.filter(
+            season=season,
+            season_type=season_type,
+            home_pts__isnull=False,
+            away_pts__isnull=False,
+        )
         latest_date = (
-            dim_games_model.objects.filter(season=season, season_type=season_type)
+            played
             .order_by("-game_date")
             .values_list("game_date", flat=True)
             .distinct()[:5]
@@ -117,7 +125,7 @@ class Service:
             return []
 
         return list(
-            dim_games_model.objects.filter(season=season, season_type=season_type, game_date__in=latest_date)
+            played.filter(game_date__in=latest_date)
             .only("game_id", "game_date", "season", "home_team_name", "away_team_name", "home_pts", "away_pts")
         )
 

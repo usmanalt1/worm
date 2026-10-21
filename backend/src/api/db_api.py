@@ -124,8 +124,8 @@ class LatestGames(Schema):
     season: str
     home_team_name: str
     away_team_name: str
-    home_pts: int
-    away_pts: int
+    home_pts: Optional[float] = None
+    away_pts: Optional[float] = None
 
 
 class BoxScoreLine(Schema):
