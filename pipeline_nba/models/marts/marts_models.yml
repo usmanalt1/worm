@@ -105,8 +105,6 @@ models:
       on_schema_change: append_new_columns
     alias: dim_rosters
     description: "This table contains dimension data for NBA rosters, including roster information and statistics."
-    alias: dim_rosters
-    description: "This table contains dimension data for NBA rosters, including roster information and statistics."
   - name: fct_player_stats
     config:
       materialized: incremental
