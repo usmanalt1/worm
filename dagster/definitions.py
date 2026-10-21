@@ -38,13 +38,6 @@ backtest_pipeline = define_asset_job(
     description="Score every strategy against the last completed season.",
 )
 
-bigquery_mirror = define_asset_job(
-    "bigquery_mirror",
-    selection=AssetSelection.assets(latest_nba_data, bigquery_tables),
-    executor_def=in_process_executor,
-    description="Collect the live season and mirror it into BigQuery.",
-)
-
 # 09:00 London = 04:00 ET, after the last west-coast game. Explicit timezone, or this
 # drifts against the games twice a year.
 nightly_schedule = ScheduleDefinition(
@@ -74,7 +67,7 @@ defs = Definitions(
         backtest_scorecard,
         bigquery_tables,
     ],
-    jobs=[nightly_pipeline, backtest_pipeline, bigquery_mirror],
+    jobs=[nightly_pipeline, backtest_pipeline],
     schedules=[nightly_schedule, backtest_schedule],
     sensors=email_alert_sensors(nightly_pipeline),
 )

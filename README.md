@@ -220,8 +220,7 @@ in [dagster/definitions.py](dagster/definitions.py):
 | `bigquery_tables` | bigquery | Mirrors a collected run into BigQuery. Analytics only |
 
 Three jobs: `nightly_pipeline` (the five assets above, in order), `backtest_pipeline`
-(`backtest_scorecard` alone, reusing whatever marts the last nightly left), and
-`bigquery_mirror`.
+(`backtest_scorecard` alone, reusing whatever marts the last nightly left)
 
 `live_predictions` takes `team_strength` as an input it never reads, purely to force the
 ratings to rebuild first. Predicting before the rebuild would score tonight's games with
