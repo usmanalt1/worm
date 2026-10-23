@@ -3,6 +3,12 @@ name: nightly-pipeline
 on:
   workflow_dispatch:
 
+# Shared with backfill-pipeline: production runs no Dagster daemon, so its own
+# concurrency limits never apply and two runs would upsert the same tables at once.
+concurrency:
+  group: nba-pipeline
+  cancel-in-progress: false
+
 jobs:
   nightly:
     runs-on: ubuntu-latest

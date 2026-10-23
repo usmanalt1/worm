@@ -1,0 +1,145 @@
+name: backfill-pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: 'Seasons, comma separated. e.g. 2019-20,2020-21'
+        required: true
+        type: string
+      season_types:
+        description: 'Season types, comma separated: preseason, regular, playoffs'
+        required: true
+        default: 'regular'
+        type: string
+      tables:
+        description: 'Tables, comma separated. Blank = team_stats, player_stats, advanced_player_season_stats, advanced_team_season_stats'
+        required: false
+        default: ''
+        type: string
+
+# Shared with nightly-pipeline: production runs no Dagster daemon, so its own
+# concurrency limits never apply and two runs would upsert the same tables at once.
+concurrency:
+  group: nba-pipeline
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      DAGSTER_HOME: ${{ github.workspace }}/dagster_home
+      DBT_TARGET: neon
+      DBT_PROFILES_DIR: ${{ github.workspace }}/pipeline_nba/ci
+      STORAGE: gcs
+      PARENT_BUCKET: nba-ua-prod-bucket
+      FILE_PATH_PARENT_NAME: nba-ua-prod-bucket
+      GCS_PROJECT_NAME: nba-ua-prod
+      GCS_SERVICE_ACCOUNT_JSON: ${{ github.workspace }}/gcp_service_account.json
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      REDIS_URL: ${{ secrets.REDIS_URL }}
+      # Without this, stats.nba.com blackholes the runner and the collection times out.
+      NBA_PROXY: ${{ secrets.NBA_PROXY }}
+      DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+      JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
+      LLM_DB_USER: ${{ secrets.LLM_DB_USER }}
+      LLM_DB_PASSWORD: ${{ secrets.LLM_DB_PASSWORD }}
+      PGHOST: ${{ secrets.PGHOST }}
+      PGUSER: ${{ secrets.PGUSER }}
+      PGPASSWORD: ${{ secrets.PGPASSWORD }}
+      PGDATABASE: ${{ secrets.PGDATABASE }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      RUN_CONFIG: ${{ github.workspace }}/backfill_config.yaml
+    steps:
+      - uses: actions/checkout@v4
+
+      # Validate and build the run config before installing anything, so a typo in the
+      # inputs fails in seconds rather than after the dependency install.
+      - name: Build Dagster run config
+        env:
+          SEASONS: ${{ inputs.seasons }}
+          SEASON_TYPES: ${{ inputs.season_types }}
+          TABLES: ${{ inputs.tables }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+
+          def split(value):
+              return [part.strip() for part in value.split(",") if part.strip()]
+
+          seasons = split(os.environ["SEASONS"])
+          season_types = split(os.environ["SEASON_TYPES"])
+          tables = split(os.environ.get("TABLES", ""))
+
+          errors = []
+          if not seasons:
+              errors.append("seasons is empty")
+          for season in seasons:
+              if not re.fullmatch(r"\d{4}-\d{2}", season):
+                  errors.append(f"season '{season}' is not of the form 2019-20")
+          if not season_types:
+              errors.append("season_types is empty")
+          for season_type in season_types:
+              if season_type.lower() not in ("preseason", "regular", "playoffs"):
+                  errors.append(f"season type '{season_type}' is not preseason, regular or playoffs")
+
+          if errors:
+              for error in errors:
+                  print(f"::error::{error}")
+              sys.exit(1)
+
+          config = {"ops": {"backfill_nba_data": {"config": {
+              "seasons": seasons,
+              "season_types": [t.lower() for t in season_types],
+              "tables": tables,
+          }}}}
+          # JSON is valid YAML, so this needs no yaml dependency.
+          with open(os.environ["RUN_CONFIG"], "w") as handle:
+              json.dump(config, handle, indent=2)
+
+          print(f"seasons={seasons} season_types={season_types} tables={tables or 'backfill preset'}")
+          PY
+
+      # gcsfs and the GCS/BigQuery clients take a keyfile path, not the JSON itself,
+      # so the secret has to land on disk before any asset touches storage.
+      - run: |
+          if [ -z "$GCP_SERVICE_ACCOUNT_KEY" ]; then
+            echo "::error::secrets.GCP_SERVICE_ACCOUNT_KEY is empty. Add the service account JSON under Settings > Secrets and variables > Actions, on the Secrets tab at repository level."
+            exit 1
+          fi
+          printf '%s' "$GCP_SERVICE_ACCOUNT_KEY" > "$GCS_SERVICE_ACCOUNT_JSON"
+          python3 -c "import json,os; json.load(open(os.environ['GCS_SERVICE_ACCOUNT_JSON']))"
+        env:
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: pip
+
+      # mysqlclient builds from source and needs the client headers.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
+
+      - run: pip install -r requirements.txt
+
+      - run: mkdir -p "$DAGSTER_HOME"
+
+      # Must precede the first dbt build: dbt's on-run-end grants to llm_readonly,
+      # which migration 0014 is what creates.
+      - run: python backend/src/manage.py migrate
+
+      # One job on purpose: backfill_nba_data writes parquet under a run_id that
+      # backfill_postgres_tables reads back, so splitting these loses the handoff.
+      - run: dagster job execute -f dagster/definitions.py -d dagster -j backfill_pipeline --config "$RUN_CONFIG"
+
+      # always(), so a failure in any step above still reports; the daemon's sensors
+      # cannot, since `dagster job execute` runs no daemon. continue-on-error keeps a
+      # refused mailbox from turning a good run red.
+      - name: Email pipeline outcome
+        if: always()
+        continue-on-error: true
+        env:
+          JOB_STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: python scripts/pipeline_alert.py "$JOB_STATUS" --run-url "$RUN_URL"

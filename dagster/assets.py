@@ -15,6 +15,7 @@ from dagster import AssetExecutionContext, Config, MetadataValue, asset
 
 from seasons import current_season, previous_season
 from services.data_collection.build_data_service import BuildDataService
+from services.data_collection.request import season_types_from_names
 from services.db.db_service import DBService
 from services.ml_model.models.model_trainer import ModelTraner, MODE_LIVE
 from services.ml_model.model_selection import best_strategy
@@ -84,10 +85,12 @@ def postgres_raw_tables(context: AssetExecutionContext, latest_nba_data: dict) -
     return loaded
 
 
-@asset(compute_kind="dbt")
-def dbt_marts(context: AssetExecutionContext, config: NightlyConfig, postgres_raw_tables: dict) -> dict:
+def _dbt_target(configured: Optional[str]) -> str:
+    return configured or os.getenv("DBT_TARGET", "container_postgres")
+
+
+def _dbt_build(context: AssetExecutionContext, target: str) -> dict:
     """Build the dbt project. `build` not `run`, so a failing test stops downstream models."""
-    target = config.dbt_target or os.getenv("DBT_TARGET", "container_postgres")
     command = [
         "dbt", "build",
         "--project-dir", str(DBT_PROJECT_DIR),
@@ -111,6 +114,11 @@ def dbt_marts(context: AssetExecutionContext, config: NightlyConfig, postgres_ra
         "summary": MetadataValue.md(f"```\n{process.stdout[-4000:]}\n```"),
     })
     return {"target": target, "returncode": process.returncode}
+
+
+@asset(compute_kind="dbt")
+def dbt_marts(context: AssetExecutionContext, config: NightlyConfig, postgres_raw_tables: dict) -> dict:
+    return _dbt_build(context, _dbt_target(config.dbt_target))
 
 
 @asset(compute_kind="python")
@@ -259,3 +267,76 @@ def backtest_scorecard(context: AssetExecutionContext, config: BacktestConfig, d
 
     context.add_output_metadata({"season": season, "metrics": MetadataValue.json(metrics)})
     return metrics
+
+
+class BackfillConfig(Config):
+    # Required. Workflow inputs arrive as a comma separated string, split before it gets here.
+    seasons: list = []
+    # Friendly names: preseason, regular, playoffs.
+    season_types: list = ["regular"]
+    # Empty collects every table the backfill preset covers.
+    tables: list = []
+    dbt_target: str = None
+
+
+@asset(compute_kind="nba_api")
+def backfill_nba_data(context: AssetExecutionContext, config: BackfillConfig) -> dict:
+    """Re-collect chosen tables for chosen seasons and season types under one run_id."""
+    if not config.seasons:
+        raise ValueError('backfill_nba_data needs at least one season, e.g. seasons: ["2019-20"]')
+
+    season_types = list(season_types_from_names(config.season_types))
+    context.log.info(
+        f"Backfilling seasons={config.seasons} season_types={season_types} "
+        f"tables={config.tables or 'backfill preset'}"
+    )
+
+    result = BuildDataService().build_season_backfill(
+        seasons=config.seasons,
+        season_types=season_types,
+        tables=config.tables or None,
+    )
+
+    # What the plan refused to do: a named table that ignores season type, or a snapshot.
+    for note in result["notes"]:
+        context.log.warning(note)
+
+    context.add_output_metadata({
+        "run_id": result["run_id"],
+        "seasons": MetadataValue.json(result["seasons"]),
+        "season_types": MetadataValue.json(season_types),
+        "tables": MetadataValue.json(result["saved"]),
+        "rows_collected": sum(result["saved"].values()),
+        "notes": MetadataValue.json(result["notes"]),
+    })
+    return result
+
+
+@asset(compute_kind="postgres")
+def backfill_postgres_tables(context: AssetExecutionContext, backfill_nba_data: dict) -> dict:
+    """Upsert the backfill run's parquet files into the raw Postgres tables."""
+    run_id = backfill_nba_data["run_id"]
+    context.log.info(f"Loading backfill run {run_id} into Postgres")
+
+    loaded = DBService().save(run_id=run_id)
+
+    if not loaded:
+        raise RuntimeError(
+            f"Run {run_id} loaded no rows into Postgres. Check STORAGE matches where "
+            "backfill_nba_data wrote: 'local' reads FILE_PATH_PARENT_NAME, 'gcs' reads PARENT_BUCKET."
+        )
+
+    context.add_output_metadata({
+        "run_id": run_id,
+        "tables": MetadataValue.json(loaded),
+        "rows_loaded": sum(loaded.values()),
+    })
+    return loaded
+
+
+@asset(compute_kind="dbt")
+def backfill_dbt_marts(
+    context: AssetExecutionContext, config: BackfillConfig, backfill_postgres_tables: dict,
+) -> dict:
+    """Rebuild the marts over the backfilled seasons, in the same run as the load."""
+    return _dbt_build(context, _dbt_target(config.dbt_target))

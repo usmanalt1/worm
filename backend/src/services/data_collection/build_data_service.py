@@ -1,12 +1,25 @@
 
 from services.data_collection.collect import CollectRawNBAData
-from nba_api.stats.library.parameters import SeasonTypePlayoffs, SeasonType, SeasonTypeAllStar
+from services.data_collection.pipeline import CollectionPipeline
+from services.data_collection.presets import (
+    CORE_TABLES,
+    LOG_TABLES,
+    NIGHTLY_TABLES,
+    SEASON_BACKFILL_TABLES,
+)
+from services.data_collection.request import (
+    ALL_SEASON_TYPES,
+    PLAYOFFS,
+    PRESEASON,
+    REGULAR,
+    CollectionRequest,
+    season_year_for,
+)
 from services.data_collection.constants import Constants
-from services.injuries.service import InjuryFeedService
 from services.object_storage.service import ObjectStorageService
 from datetime import datetime, timedelta
 from django.utils import timezone
-from app.models import PlayerAwards, AdvancedPlayerSeasonStats, AdvancedTeamSeasonStats
+from app.models import PlayerAwards
 import logging
 import pandas as pd
 import time
@@ -16,16 +29,31 @@ logger = logging.getLogger(__name__)
 class BuildDataService:
     def __init__(self, date = None):
         self.date = date or datetime.today() - timedelta(weeks=52)
+        self.pipeline = CollectionPipeline()
 
     def build_nba_data(self, table_name = None, season_id: str = None, season_year: str = None, team_roster: bool = False, game_schedule: bool = False) -> dict:
+        """Collect tables into frames without saving them, keyed by table name."""
+        # season_id is derived from season_year; it stays in the signature for callers.
+        request = CollectionRequest(
+            seasons=(season_year or season_year_for(datetime.today().date()),),
+            season_types=ALL_SEASON_TYPES,
+            tables=self._tables_for(table_name, team_roster, game_schedule),
+        )
         try:
-            raw_tables = CollectRawNBAData(date_to_run=self.date).gather_and_import_nba_data(table_name=table_name, season_id=season_id, season_year=season_year, team_roster=team_roster, game_schedule=game_schedule)
-
+            return self.pipeline.frames(request)
         except Exception as e:
             logger.error(f"Error occurred while building NBA data: {e}")
             raise
 
-        return raw_tables
+    @staticmethod
+    def _tables_for(table_name: str, team_roster: bool, game_schedule: bool) -> tuple:
+        if table_name:
+            return (table_name,)
+        if game_schedule:
+            return (Constants.GAME_SCHEDULE,)
+        if team_roster:
+            return CORE_TABLES + (Constants.TEAMS_ROSTER,)
+        return CORE_TABLES
 
     def build_player_awards(self, players_table: pd.DataFrame) -> dict:
         """Fetch awards to object storage, skipping stored players: awards are static
@@ -64,85 +92,49 @@ class BuildDataService:
         mode has unplayed games to predict.
         """
         today = datetime.today()
-        if season_year is None:
-            season_year = CollectRawNBAData(date_to_run=today).season_year
-        split_year = season_year.split("-")
-        season_id = f"{split_year[0][-2:]}0{split_year[1][-2:]}"
-
+        season_year = season_year or season_year_for(today.date())
         run_id = run_id or pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
-        storage = ObjectStorageService(generate_run_id=run_id).get_storage()
-        run_timestamp = pd.Timestamp.now()
-        logger.info(f"Collecting latest data for {season_year} (season_id={season_id}) under run {run_id}")
+        logger.info(f"Collecting latest data for {season_year} under run {run_id}")
 
-        collector = BuildDataService(date=today)
-        saved = {}
-
-        def _save(tables: dict) -> None:
-            for table_name, df in tables.items():
-                if df is None or df.empty:
-                    logger.warning(f"No rows collected for {table_name} ({season_year})")
-                    continue
-                df["run_timestamp"] = run_timestamp
-                storage.save(df=df, file_name=table_name, season=season_year)
-                saved[table_name] = len(df)
-                logger.info(f"Saved {len(df)} rows for {table_name} ({season_year}) under run {run_id}")
-
-        _save(collector.build_nba_data(season_id=season_id, season_year=season_year, team_roster=True))
-        _save(collector.build_nba_data(season_id=season_id, season_year=season_year, game_schedule=True))
-        _save(collector.build_player_injuries(collected_date=today.date()))
-        collector.build_advanced_season_stats(
-            seasons=[season_year], storage=storage, run_timestamp=run_timestamp,
-        )
+        # Two passes under one run_id: the game logs carry preseason, the season-total
+        # tables do not, so preseason there stays an explicit backfill.
+        season_total_tables = tuple(t for t in NIGHTLY_TABLES if t not in LOG_TABLES)
+        saved = self.pipeline.run(CollectionRequest(
+            seasons=(season_year,), season_types=ALL_SEASON_TYPES,
+            tables=LOG_TABLES, run_id=run_id, as_of=today.date(),
+        ))
+        saved.update(self.pipeline.run(CollectionRequest(
+            seasons=(season_year,), season_types=(REGULAR, PLAYOFFS),
+            tables=season_total_tables, run_id=run_id, as_of=today.date(),
+        )))
 
         return {"run_id": run_id, "season_year": season_year, "saved": saved}
 
     def build_preseason_backfill(self, seasons: list, run_id: str = None) -> dict:
         """Collect preseason box scores only; a full backfill would also rewrite the
         per-(entity, season) tables."""
-        run_id = run_id or pd.Timestamp.now().strftime("%Y%m%d%H%M%S")
-        storage = ObjectStorageService(generate_run_id=run_id).get_storage()
-        run_timestamp = pd.Timestamp.now()
-        collector = CollectRawNBAData(date_to_run=datetime.today())
-        saved = {}
+        request = CollectionRequest(
+            seasons=tuple(seasons), season_types=(PRESEASON,),
+            tables=LOG_TABLES, run_id=run_id,
+        )
+        plan = self.pipeline.plan(request)
+        return {"run_id": plan.run_id, "seasons": seasons, "saved": self.pipeline.execute(plan)}
 
-        for season_year in seasons:
-            for table_name, pt in ((collector.TEAM_STATS, "T"), (collector.PLAYER_STATS, "P")):
-                df = collector._get_logs(
-                    season_year=season_year,
-                    pt_abbreviation=pt,
-                    season_type=SeasonTypeAllStar.preseason,
-                )
-                df = df.dropna()
-                if df.empty:
-                    logger.warning(f"No preseason {table_name} for {season_year}")
-                    continue
-                df["run_timestamp"] = run_timestamp
-                storage.save(df=df, file_name=table_name, season=season_year)
-                saved[f"{season_year}/{table_name}"] = len(df)
-                logger.info(f"Saved {len(df)} preseason {table_name} rows for {season_year}")
-
-        return {"run_id": run_id, "seasons": seasons, "saved": saved}
-
-    def build_player_injuries(self, collected_date) -> dict:
-        """Today's injury snapshot, keyed by the date it was taken.
-
-        Third-party and additive, so a failure returns nothing rather than raising: the
-        night's predictions must not depend on an outside feed being up.
-        """
-        try:
-            df = InjuryFeedService().fetch_nba()
-        except Exception:
-            logger.exception("Injury feed unavailable; continuing without today's snapshot")
-            return {}
-
-        if df is None or df.empty:
-            logger.warning("Injury feed returned no rows")
-            return {}
-
-        df["collected_date"] = collected_date
-        logger.info(f"Collected {len(df)} injury rows for {collected_date}")
-
-        return {Constants.PLAYER_INJURIES: df}
+    def build_season_backfill(self, seasons: list, run_id: str = None, season_types: list = None, tables: list = None) -> dict:
+        """Backfill chosen tables for chosen seasons and season types under one run_id."""
+        request = CollectionRequest(
+            seasons=tuple(seasons),
+            season_types=tuple(season_types) if season_types else (REGULAR,),
+            tables=tuple(tables) if tables else SEASON_BACKFILL_TABLES,
+            run_id=run_id,
+        )
+        plan = self.pipeline.plan(request)
+        return {
+            "run_id": plan.run_id,
+            "seasons": seasons,
+            "notes": list(plan.notes),
+            "saved": self.pipeline.execute(plan),
+        }
 
     def build_draft_history(self, draft_years: list, run_id: str = None) -> dict:
         """Collect whole drafts into object storage.
@@ -170,47 +162,16 @@ class BuildDataService:
 
         return {"run_id": run_id, "draft_years": draft_years, "saved": saved}
 
-    def build_advanced_season_stats(self, seasons: list, season_types: list = None, storage=None, run_timestamp=None) -> dict:
+    def build_advanced_season_stats(self, seasons: list, season_types: list = None, run_id: str = None) -> dict:
         """Collect season-level advanced stats into object storage; re-running refreshes."""
-        if season_types is None:
-            season_types = [SeasonType.default, SeasonTypePlayoffs.playoffs]
-
-        collector = CollectRawNBAData(date_to_run=self.date)
-        # Passed in, these fold this into a larger run so every table shares one run_id.
-        object_storage_service = storage or ObjectStorageService().get_storage()
-        run_timestamp = run_timestamp or timezone.now()
-        model_for = {
-            collector.ADVANCED_PLAYER_SEASON_STATS: AdvancedPlayerSeasonStats,
-            collector.ADVANCED_TEAM_SEASON_STATS: AdvancedTeamSeasonStats,
-        }
-        saved = {}
-
-        for season_year in seasons:
-            split_year = season_year.split("-")
-            season_id = f"{split_year[0][-2:]}0{split_year[1][-2:]}"
-
-            # Storage keys on (run, season, table_name), so saving each season_type
-            # separately would have the second overwrite the first.
-            combined = {table: [] for table in model_for}
-            for season_type in season_types:
-                raw_tables = collector._get_advanced_season_stats(
-                    season_year=season_year, season_id=season_id, season_type=season_type,
-                )
-                for table_name, df in raw_tables.items():
-                    if df is not None and not df.empty:
-                        combined[table_name].append(df)
-
-            for table_name, frames in combined.items():
-                if not frames:
-                    continue
-                df = pd.concat(frames, ignore_index=True)
-                model = model_for[table_name]
-                model_fields = {f.name for f in model._meta.get_fields() if f.concrete and f.name != "id"}
-                df = df[[c for c in df.columns if c in model_fields]]
-                df["run_timestamp"] = run_timestamp
-                object_storage_service.save(df=df, file_name=table_name, season=season_year)
-                key = f"{season_year}/{table_name}"
-                saved[key] = len(df)
-                logger.info(f"Saved {len(df)} rows for {key} to object storage")
-
-        return {"seasons": seasons, "saved": saved}
+        request = CollectionRequest(
+            seasons=tuple(seasons),
+            season_types=tuple(season_types) if season_types else (REGULAR, PLAYOFFS),
+            tables=(
+                Constants.ADVANCED_PLAYER_SEASON_STATS,
+                Constants.ADVANCED_TEAM_SEASON_STATS,
+            ),
+            run_id=run_id,
+        )
+        plan = self.pipeline.plan(request)
+        return {"seasons": seasons, "saved": self.pipeline.execute(plan)}
