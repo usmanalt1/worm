@@ -13,23 +13,10 @@ from nba_api.stats.endpoints import drafthistory
 from http.client import RemoteDisconnected
 from services.data_collection.constants import Constants
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, SeasonType, SeasonTypeAllStar
-import nba_api.library.http as nba_http
-import os
 import time as t
+from services.data_collection.nba_proxy import configure_proxy
 
-# stats.nba.com blackholes datacenter IPs, so a scheduled run off a cloud runner needs
-# to egress through a residential proxy. Set here rather than threaded through every
-# endpoint call: http.py falls back to this global whenever a call passes proxy=None,
-# which all of them do.
-_NBA_PROXY = os.getenv("NBA_PROXY")
-if _NBA_PROXY:
-    if not hasattr(nba_http, "PROXY"):
-        raise RuntimeError(
-            "nba_api.library.http.PROXY is gone, so NBA_PROXY would be ignored and every "
-            "request would egress unproxied. Pin nba_api or pass proxy= per call instead."
-        )
-    nba_http.PROXY = _NBA_PROXY
-    logging.getLogger(__name__).info("Routing stats.nba.com requests through NBA_PROXY")
+configure_proxy()
 
 SHOOTING_PCT_COLS = ["fg_pct", "fg3_pct", "ft_pct"]
 

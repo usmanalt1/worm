@@ -11,6 +11,9 @@ from dagster import (
 
 from alerts import email_alert_sensors
 from assets import (
+    backfill_dbt_marts,
+    backfill_nba_data,
+    backfill_postgres_tables,
     backtest_scorecard,
     bigquery_tables,
     dbt_marts,
@@ -29,6 +32,17 @@ nightly_pipeline = define_asset_job(
     ),
     executor_def=in_process_executor,
     description="Collect the live season, load it, rebuild the marts, re-predict the upcoming slate.",
+)
+
+# Collect, load and rebuild in one job: the run_id hands off in-process, so splitting
+# these would lose it. Config comes from the workflow, which has no schedule.
+backfill_pipeline = define_asset_job(
+    "backfill_pipeline",
+    selection=AssetSelection.assets(
+        backfill_nba_data, backfill_postgres_tables, backfill_dbt_marts,
+    ),
+    executor_def=in_process_executor,
+    description="Re-collect chosen seasons, season types and tables, then rebuild the marts.",
 )
 
 backtest_pipeline = define_asset_job(
@@ -66,8 +80,11 @@ defs = Definitions(
         live_predictions,
         backtest_scorecard,
         bigquery_tables,
+        backfill_nba_data,
+        backfill_postgres_tables,
+        backfill_dbt_marts,
     ],
-    jobs=[nightly_pipeline, backtest_pipeline],
+    jobs=[nightly_pipeline, backfill_pipeline, backtest_pipeline],
     schedules=[nightly_schedule, backtest_schedule],
     sensors=email_alert_sensors(nightly_pipeline),
 )
