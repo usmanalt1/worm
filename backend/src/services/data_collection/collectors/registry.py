@@ -42,9 +42,14 @@ DATASET_FOR_TABLE = {cls.table: cls.name for cls in COLLECTOR_CLASSES}
 TABLES = tuple(DATASET_FOR_TABLE)
 
 
-def dataset_for_table(table: str) -> str:
-    if table not in DATASET_FOR_TABLE:
+def table_map(registry: dict) -> dict:
+    """table -> dataset for one registry. Two collectors on one table would lose one."""
+    return {collector.table: name for name, collector in registry.items()}
+
+
+def dataset_for_table(table: str, mapping: dict) -> str:
+    if table not in mapping:
         raise ValueError(
-            f"No collector writes '{table}'. Known tables: {', '.join(sorted(DATASET_FOR_TABLE))}"
+            f"No collector writes '{table}'. Known tables: {', '.join(sorted(mapping))}"
         )
-    return DATASET_FOR_TABLE[table]
+    return mapping[table]

@@ -3,7 +3,7 @@ from dataclasses import dataclass, replace
 
 import pandas as pd
 
-from services.data_collection.collectors.registry import build_registry, dataset_for_table
+from services.data_collection.collectors.registry import build_registry, dataset_for_table, table_map
 from services.data_collection.request import (
     CollectionRequest,
     WorkItem,
@@ -39,6 +39,8 @@ def restrict_to_model_fields(df: pd.DataFrame, model) -> pd.DataFrame:
 class CollectionPipeline:
     def __init__(self, registry: dict = None):
         self.registry = registry or build_registry()
+        # Derived from this registry, not the module default, so an injected one resolves.
+        self.table_map = table_map(self.registry)
 
     def run(self, request: CollectionRequest, storage=None) -> dict:
         return self.execute(self.plan(request), storage=storage)
@@ -129,7 +131,7 @@ class CollectionPipeline:
     def _datasets_for(self, request: CollectionRequest) -> list:
         if not request.tables:
             return list(self.registry)
-        wanted = {dataset_for_table(table) for table in request.tables}
+        wanted = {dataset_for_table(table, self.table_map) for table in request.tables}
         # Registry order, so dependencies are collected before the datasets needing them.
         return [dataset for dataset in self.registry if dataset in wanted]
 
