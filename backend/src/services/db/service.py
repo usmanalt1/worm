@@ -127,6 +127,7 @@ class Service:
         return list(
             played.filter(game_date__in=latest_date)
             .only("game_id", "game_date", "season", "home_team_name", "away_team_name", "home_pts", "away_pts")
+            .order_by("-game_date")
         )
 
     def get_game_box_score(self, game_id: str) -> dict:
