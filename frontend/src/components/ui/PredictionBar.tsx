@@ -93,12 +93,9 @@ export function PredictionBar({
                 )}
             </div>
 
-            {/* Stacked rather than side-by-side: full-length NBA team names need the
-                whole card width or they all truncate to "Golden State ...". */}
             <Side team={awayTeam} pct={awayPct} pts={awayPts} colours={away} picked={predictedHomeWin === false} />
             <Side team={homeTeam} pct={homePct} pts={homePts} colours={home} picked={predictedHomeWin === true} />
 
-            {/* 2px surface gap between the two fills rather than a stroke around them. */}
             <div style={{ display: 'flex', gap: 2, height: 6, marginTop: 10 }}>
                 <div style={{ width: `${awayPct}%`, background: away.colour, borderRadius: '3px 0 0 3px' }} />
                 <div style={{ flex: 1, background: home.colour, borderRadius: '0 3px 3px 0' }} />

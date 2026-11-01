@@ -369,8 +369,6 @@ class DimSeasons(models.Model):
 
 class FctPlayerStats(models.Model):
     season_id = models.CharField(max_length=20)
-    # Denormalised in dbt: dim_players only covers the latest season, so the FK
-    # inner-joins away every earlier player.
     player_name = models.CharField(max_length=100, null=True, blank=True)
     player = models.ForeignKey(
         DimPlayers,

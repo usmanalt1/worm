@@ -17,8 +17,6 @@ function dayLabel(date: string): string {
     return new Date(date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-// The last graded day, not literally yesterday: some days have no games, and a result
-// only lands once the pipeline has collected it.
 export function HomeLastNight({ index, strategy, stats, loading, seasonType }: HomeLastNightProps) {
     const night = useMemo(() => {
         if (stats.graded.length === 0) return null;
@@ -64,8 +62,6 @@ export function HomeLastNight({ index, strategy, stats, loading, seasonType }: H
                 </div>
             )}
 
-            {/* Predictions only cover unplayed games, so early on there is a gap between
-                what has a result and what was ever called. Say which, rather than 0%. */}
             {!loading && !night && (
                 <div style={{ fontSize: 13, color: 'var(--paper-faint)', padding: '8px 0' }}>
                     Nothing graded yet — no game it has called has a final score in the

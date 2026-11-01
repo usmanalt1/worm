@@ -6,7 +6,7 @@ logger = logging.getLogger(__name__)
 from services.db.service import Service
 from app.models import (
     DimPlayers, FctPlayerStats, FctTeamStats, FctAdvancedPlayerSeasonStats,
-    FctAdvancedTeamSeasonStats, DimSeasons, DimTeams, DimGames,
+    FctAdvancedTeamSeasonStats, DimSeasons, DimTeams, DimGames, PlayerStats
 )
 from services.db.async_db import db_thread
 from datetime import date, datetime
@@ -65,6 +65,7 @@ class SeasonPlayerStats(BoxScoreAverages):
     player_name: str
     season: str
     position: Optional[str] = None
+    team_abbreviation: Optional[str] = None
 
 class SeasonTeamStats(BoxScoreAverages):
     team_id: int
@@ -118,6 +119,15 @@ class PlayerAggStats(Schema):
     average_plus_minus: float
     average_assists: float
 
+class TodaysTopPlayers(Schema):
+    player_id: int
+    player_name: str
+    team_abbreviation: str
+    matchup: str
+    points: float
+    rebounds: float
+    assists: float
+    
 class LatestGames(Schema):
     game_id: str
     game_date: datetime
@@ -295,6 +305,17 @@ async def get_player(request, player_id: int, season_type: Literal["regular", "p
         )
 
     return await db_thread(sync_get_player, player_id)
+
+@router.get("/get_latest_top_players", response=List[TodaysTopPlayers])
+async def get_todays_top_players(request):
+    def sync_get_best_players_latest_season():
+        # Seasons with games only: dim_seasons also carries the upcoming, statless season.
+        latest_season: DimSeasons = Service(DimSeasons).get_seasons_with_stats()[-1]
+        season_name = latest_season.season_name
+        get_players = Service(PlayerStats).get_top_player_stats(season=season_name)
+        return get_players[:10]
+
+    return await db_thread(sync_get_best_players_latest_season)
 
 @router.get("/get_top_3_best_players_latest_season/{stat_type}", response=List[PlayerAggStats])
 async def get_top_3_best_players_latest_season(request, stat_type: str):
