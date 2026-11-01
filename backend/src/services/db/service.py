@@ -5,7 +5,7 @@ from django.db.models import Model
 from app.models import (
     FctPlayerStats, FctTeamStats,
     FctAdvancedPlayerSeasonStats, FctAdvancedTeamSeasonStats,
-    DimPlayers, DimRosters, DimSeasons, DimGames, DimTeams,
+    DimPlayers, DimRosters, DimSeasons, DimGames, DimTeams, PlayerStats
 )
 from django.db.models import Avg, Count, ExpressionWrapper, F, FloatField, Max, Q, Sum, Value
 from django.db.models.functions import NullIf, Round
@@ -161,15 +161,12 @@ class Service:
         season_type: str = "regular",
     ) -> list:
         """Per-game averages for every player in a season, one row per player."""
-        # Never traverse the player FK: dim_players covers the latest season only, so the
-        # inner join drops every earlier player.
         qs = FctPlayerStats.objects.filter(
             season=str(season_name), season_type=season_type,
         )
         if team_id:
             qs = qs.filter(team_id=team_id)
         if position:
-            # Resolved to ids first, so this stays a filter rather than a join.
             matching_ids = DimPlayers.objects.filter(
                 position__icontains=position,
             ).values_list("player_id", flat=True)
@@ -179,15 +176,20 @@ class Service:
             qs.values("player_id", "season")
             .annotate(
                 games_played=Count("game_id", distinct=True),
-                # Max, not a group-by: the source spells some names two ways.
                 player_name=Max("player_name"),
                 **_box_score_averages(),
             )
             .order_by("-average_points")
         )
         positions = dict(DimPlayers.objects.values_list("player_id", "position"))
+        teams = dict(
+            DimRosters.objects.filter(season=str(season_name))
+            .order_by(F("last_game_with_team").asc(nulls_first=True))
+            .values_list("player_id", "team_abbreviation")
+        )
         for row in rows:
             row["position"] = positions.get(row["player_id"])
+            row["team_abbreviation"] = teams.get(row["player_id"])
         return rows
 
     def get_season_team_stats(
@@ -288,3 +290,25 @@ class Service:
         
         player_stats = player_stats.annotate(player_name=Max("player__player_name"))
         return list(player_stats)
+
+    def get_top_player_stats(self, season: Optional[int] = None):
+        """Get Top player stats for the latest game date in the season"""
+        qs = PlayerStats.objects.all()
+        if season:
+            qs = qs.filter(season=str(season))
+        latest_date = qs.aggregate(Max("game_date"))["game_date__max"]
+        latest_stats = qs.filter(game_date=latest_date).order_by("-game_date").values(
+            "player_id", "player_name", "team_abbreviation", "pts", "reb", "ast", "matchup"
+        )
+        latest_stats = latest_stats.order_by("-pts", "-reb", "-ast")
+        latest_stats = latest_stats.annotate(
+            points = F("pts"),
+            rebounds = F("reb"),
+            assists = F("ast")
+        )
+        latest_stats = latest_stats.values(
+            "player_id", "player_name", "team_abbreviation", "points", "rebounds", "assists", "matchup"
+        )
+
+        return list(latest_stats)
+

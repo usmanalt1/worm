@@ -14,10 +14,8 @@ const STAT_CONFIG: Record<StatKey, { title: string; valueKey: keyof RankedPlayer
 };
 
 interface HomeTrendsProps {
-    /** null while the caller resolves it, which holds the fetch */
     season?: string | null;
     seasonType?: string;
-    /** Keeps a two-game cameo out of a ranked list. */
     minGames?: number;
 }
 

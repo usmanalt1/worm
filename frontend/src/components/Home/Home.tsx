@@ -11,6 +11,8 @@ import { SectionHeader } from '../ui/SectionHeader';
 import { usePredictionHistory } from '../../hooks/usePredictionHistory';
 import { useStatsSeason } from '../../hooks/useStatsSeason';
 import { computeModelStats } from '../../utils/modelStats';
+import { useLatestPlayerBoxScores } from '../../hooks/useLatestPlayerBoxScores';
+import { HomeTopPlayers } from './HomeTopPlayers';
 
 /** Midnight today, so a game being played right now still counts as upcoming. */
 function startOfToday(): number {
@@ -23,6 +25,8 @@ export function Home() {
         strategy, season, upcomingSeasonType, gradedSeasonType, upcoming, graded, loading,
     } = usePredictionHistory();
     const stats = useMemo(() => computeModelStats(graded), [graded]);
+
+    const latestPlayerBoxScores = useLatestPlayerBoxScores()
 
     // not necessarily the season being predicted - see useStatsSeason
     const statsSeason = useStatsSeason();
@@ -57,18 +61,6 @@ export function Home() {
                 />
             )}
 
-            <section style={{ marginBottom: 'var(--section-gap)' }}>
-                <SectionHeader
-                    index={nextIndex()}
-                    title="Next Up"
-                    subtitle={modelName ? `What ${modelName} makes of the ${typeLabel} games still to come` : 'Upcoming predictions'}
-                />
-                <HomePredictionRail
-                    predictions={nextSlate}
-                    empty={loading ? 'Loading predictions…' : 'No upcoming games predicted yet.'}
-                />
-            </section>
-
             <HomeLastNight
                 index={nextIndex()}
                 strategy={strategy}
@@ -86,12 +78,25 @@ export function Home() {
                 <Games season={statsSeason} />
             </section>
 
+            <HomeTopPlayers index={nextIndex()} topPlayers={latestPlayerBoxScores} />
+
+            <section style={{ marginBottom: 'var(--section-gap)' }}>
+                <SectionHeader
+                    index={nextIndex()}
+                    title="Next Up"
+                    subtitle={modelName ? `What ${modelName} makes of the ${typeLabel} games still to come` : 'Upcoming predictions'}
+                />
+                <HomePredictionRail
+                    predictions={nextSlate}
+                    empty={loading ? 'Loading predictions…' : 'No upcoming games predicted yet.'}
+                />
+            </section>
+
             <HomeSeasonLeaders index={nextIndex()} season={statsSeason} />
 
             <HomeHotCold index={nextIndex()} />
 
             <HomePostseason index={nextIndex()} />
-
         </div>
     );
 }

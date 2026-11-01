@@ -165,8 +165,6 @@ export function ViewDataPage() {
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, height: '100%', minHeight: 0 }}>
-            {/* compact: this page is a full-height table, so the hero gives the rows
-                back the vertical room. */}
             <PageHero
                 compact
                 eyebrow="Every Box Score"

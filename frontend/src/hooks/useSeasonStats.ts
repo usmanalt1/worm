@@ -28,12 +28,10 @@ function useSeasonRows<T>(endpoint: string, season: string | null, seasonType: s
     return state;
 }
 
-/** Every player's season averages, one row each. Unranked and unfiltered. */
 export function useSeasonPlayerStats(season: string | null, seasonType = 'regular') {
     return useSeasonRows<SeasonPlayerStats>('season_player_stats', season, seasonType);
 }
 
-/** Every team's season averages and record, already ordered by wins. */
 export function useSeasonTeamStats(season: string | null, seasonType = 'regular') {
     return useSeasonRows<SeasonTeamStats>('season_team_stats', season, seasonType);
 }

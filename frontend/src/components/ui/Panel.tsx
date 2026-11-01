@@ -9,8 +9,6 @@ interface PanelProps {
     style?: CSSProperties;
 }
 
-// Plain div, not Mantine's Box: its rem-based shorthands scale by 1.125x against this
-// app's 18px root font-size, throwing off layout math done in pixels.
 export function Panel({ title, titleMeta, accent, children, style }: PanelProps) {
     return (
         <div

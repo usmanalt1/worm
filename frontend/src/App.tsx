@@ -50,7 +50,6 @@ function AppContent() {
   }
 
   return (
-    /* Inside the authenticated branch: team_colours needs a token. */
     <TeamColoursProvider>
       <div className={classes.shell}>
         <Navbar />
@@ -64,7 +63,6 @@ function App() {
   return (
     <MantineProvider theme={theme} defaultColorScheme="dark">
       <Router>
-        {/* Above the router, so filter selections survive navigating between pages. */}
         <ViewDataFiltersProvider>
           <AppContent />
         </ViewDataFiltersProvider>

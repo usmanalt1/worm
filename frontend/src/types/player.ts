@@ -48,6 +48,7 @@ export interface SeasonPlayerStats extends BoxScoreAverages {
     player_name: string;
     season: string;
     position: string | null;
+    team_abbreviation: string | null;
 }
 
 export interface SeasonOption {

@@ -11,17 +11,14 @@ interface TeamColourRow {
 }
 
 export interface TeamColours {
-    /** The colour to paint. In a matchup this is already swapped to `alt` on a clash. */
     colour: string;
     alt: string;
     text: string;
     abbr: string;
     name: string;
-    /** False for a team the seed doesn't cover, so chips can go neutral. */
     known: boolean;
 }
 
-/** A team id, an abbreviation, or a full team name - whatever the endpoint gave you. */
 export type TeamKey = string | number | null | undefined;
 
 interface Lookups {
@@ -143,7 +140,6 @@ export function TeamColoursProvider({ children }: { children: ReactNode }) {
     return <TeamColoursContext.Provider value={lookups}>{children}</TeamColoursContext.Provider>;
 }
 
-/** Null until the colours land, and for any team the seed doesn't cover. */
 export function useTeam(key: TeamKey): TeamColours | null {
     const lookups = useContext(TeamColoursContext);
     return useMemo(() => (lookups ? resolve(lookups, key) : null), [lookups, key]);

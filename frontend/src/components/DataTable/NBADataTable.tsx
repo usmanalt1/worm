@@ -28,6 +28,11 @@ export default function NBADataTable({ nbaData = [] }: { nbaData: SeasonPlayerSt
             columns={[
                 { accessor: 'player_name', title: header('Player', 'Player name'), sortable: true, width: 190, cellsStyle: () => nameCellStyle },
                 {
+                    accessor: 'team_abbreviation', title: header('Team', 'Team the player finished the season with'), sortable: true, width: 80,
+                    cellsStyle: () => ({ ...cellStyle, color: 'var(--paper-dim)' }),
+                    render: ({ team_abbreviation }) => team_abbreviation ?? '—',
+                },
+                {
                     accessor: 'position', title: header('Pos', 'Listed position: G guard, F forward, C center'), sortable: true, width: 70,
                     cellsStyle: () => ({ ...cellStyle, color: 'var(--paper-faint)' }),
                     render: ({ position }) => position ?? '—',
