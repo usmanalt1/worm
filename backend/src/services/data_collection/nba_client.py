@@ -3,12 +3,10 @@ import time as t
 
 import pandas as pd
 
-from services.data_collection.nba_proxy import configure_proxy
 from services.data_collection.transformer_helper import TransformHelper
 
 logger = logging.getLogger(__name__)
 
-configure_proxy()
 
 DEFAULT_HEADERS = {
     "Accept": "application/json, text/plain, /",

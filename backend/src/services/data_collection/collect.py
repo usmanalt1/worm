@@ -14,9 +14,7 @@ from http.client import RemoteDisconnected
 from services.data_collection.constants import Constants
 from nba_api.stats.library.parameters import SeasonTypePlayoffs, SeasonType, SeasonTypeAllStar
 import time as t
-from services.data_collection.nba_proxy import configure_proxy
 
-configure_proxy()
 
 SHOOTING_PCT_COLS = ["fg_pct", "fg3_pct", "ft_pct"]
 

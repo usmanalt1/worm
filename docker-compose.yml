@@ -69,13 +69,8 @@ services:
     env_file:
       - .env
     environment:
-      # `environment` overrides `env_file`, which is what makes this safe: .env carries
-      # DAGSTER_HOME for the container, and it must stay the container path.
       DAGSTER_HOME: /nba_app/dagster_home
-      # profiles.yml target the dbt_marts asset builds against. `postgres-host` is the
-      # compose service name, so it only resolves from inside this network.
       DBT_TARGET: container_postgres
-      # grpcio's atfork handler corrupts the code server's fds when the launcher forks.
       GRPC_ENABLE_FORK_SUPPORT: "false"
     ports:
       - "3000:3000"
@@ -87,11 +82,8 @@ services:
         source: .
         target: /nba_app
     container_name: dagster_webserver
-    # A crash otherwise stops the nightly silently, and point-in-time feeds lose history.
     restart: unless-stopped
 
-  # Runs the schedules. Without this container the nightly cron never fires, however the
-  # schedule is defined - the webserver only shows it.
   dagster-daemon:
     build:
       context: .
@@ -102,7 +94,6 @@ services:
     environment:
       DAGSTER_HOME: /nba_app/dagster_home
       DBT_TARGET: container_postgres
-      # grpcio's atfork handler corrupts the code server's fds when the launcher forks.
       GRPC_ENABLE_FORK_SUPPORT: "false"
     depends_on:
       postgres-host:
@@ -114,7 +105,6 @@ services:
         source: .
         target: /nba_app
     container_name: dagster_daemon
-    # A crash otherwise stops the nightly silently, and point-in-time feeds lose history.
     restart: unless-stopped
 
 

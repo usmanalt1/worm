@@ -5,7 +5,6 @@ import smtplib
 from email.message import EmailMessage
 
 SMTP_HOST = "smtp.gmail.com"
-# SSL on 465 rather than STARTTLS on 587, so there is no cleartext upgrade step to fail.
 SMTP_PORT = 465
 SMTP_TIMEOUT_SECONDS = 30
 
@@ -26,7 +25,6 @@ def send_alert_email(subject: str, body: str) -> bool:
     message.set_content(body)
 
     with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as smtp:
-        # Google shows app passwords in four spaced groups; it rejects them that way.
         smtp.login(sender, password.replace(" ", ""))
         smtp.send_message(message)
     return True

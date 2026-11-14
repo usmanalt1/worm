@@ -8,7 +8,8 @@ on:
       - 'backend/**'
       - 'dagster/**'
       - 'pipeline_nba/**'
-      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'uv.lock'
       - 'Dockerfile'
   workflow_dispatch:
 

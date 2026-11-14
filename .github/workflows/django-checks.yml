@@ -4,7 +4,8 @@ on:
   pull_request:
     paths:
       - 'backend/**'
-      - 'requirements.txt'
+      - 'pyproject.toml'
+      - 'uv.lock'
 
 jobs:
   missing-migrations:
@@ -19,19 +20,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.9'
-          cache: pip
+          enable-cache: true
 
       # mysqlclient builds from source and needs the client headers.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
 
-      - run: pip install -r requirements.txt
+      - run: uv sync --frozen
 
       - name: Fail if a model changed without a migration
         run: |
-          if ! python backend/src/manage.py makemigrations --check --dry-run; then
-            echo "::error::A model has changed with no matching migration. Run 'python backend/src/manage.py makemigrations' and commit the result."
+          if ! uv run --frozen python backend/src/manage.py makemigrations --check --dry-run; then
+            echo "::error::A model has changed with no matching migration. Run 'uv run python backend/src/manage.py makemigrations' and commit the result."
             exit 1
           fi
