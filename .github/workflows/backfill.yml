@@ -40,7 +40,8 @@ jobs:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       REDIS_URL: ${{ secrets.REDIS_URL }}
       # Without this, stats.nba.com blackholes the runner and the collection times out.
-      NBA_PROXY: ${{ secrets.NBA_PROXY }}
+      NBA_API_PROXY: ${{ secrets.NBA_PROXY }}
+      NBA_API_REQUIRE_PROXY: "1"
       DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
       JWT_SIGNING_KEY: ${{ secrets.JWT_SIGNING_KEY }}
       LLM_DB_USER: ${{ secrets.LLM_DB_USER }}
@@ -113,25 +114,24 @@ jobs:
         env:
           GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.9'
-          cache: pip
+          enable-cache: true
 
       # mysqlclient builds from source and needs the client headers.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
 
-      - run: pip install -r requirements.txt
+      - run: uv sync --frozen
 
       - run: mkdir -p "$DAGSTER_HOME"
 
       # Must precede the first dbt build: dbt's on-run-end grants to llm_readonly,
       # which migration 0014 is what creates.
-      - run: python backend/src/manage.py migrate
+      - run: uv run --frozen python backend/src/manage.py migrate
 
       # One job on purpose: backfill_nba_data writes parquet under a run_id that
       # backfill_postgres_tables reads back, so splitting these loses the handoff.
-      - run: dagster job execute -f dagster/definitions.py -d dagster -j backfill_pipeline --config "$RUN_CONFIG"
+      - run: uv run --frozen dagster job execute -f dagster/definitions.py -d dagster -j backfill_pipeline --config "$RUN_CONFIG"
 
       # always(), so a failure in any step above still reports; the daemon's sensors
       # cannot, since `dagster job execute` runs no daemon. continue-on-error keeps a
@@ -142,4 +142,4 @@ jobs:
         env:
           JOB_STATUS: ${{ job.status }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: python scripts/pipeline_alert.py "$JOB_STATUS" --run-url "$RUN_URL"
+        run: uv run --frozen python scripts/pipeline_alert.py "$JOB_STATUS" --run-url "$RUN_URL"

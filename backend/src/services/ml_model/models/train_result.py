@@ -10,5 +10,5 @@ class TrainResult:
     model: BaseEstimator
     predictions: pd.DataFrame
     metrics: Optional[dict[str, float]] = None
-    season_record: pd.DataFrame = pd.DataFrame()
+    season_record: pd.DataFrame = field(default_factory=pd.DataFrame)
     warnings: list[str] = field(default_factory=list)

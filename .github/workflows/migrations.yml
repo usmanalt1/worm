@@ -52,22 +52,21 @@ jobs:
           fi
           echo "::warning::0018 and 0019 run SQL with no reverse, so Django cannot unapply past 0020."
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v5
         with:
-          python-version: '3.9'
-          cache: pip
+          enable-cache: true
 
       # mysqlclient builds from source and needs the client headers.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends default-libmysqlclient-dev pkg-config
 
-      - run: pip install -r requirements.txt
+      - run: uv sync --frozen
 
       - name: State before
         run: |
           {
             echo "### Before"
             echo '```'
-            python backend/src/manage.py showmigrations "$APP"
+            uv run --frozen python backend/src/manage.py showmigrations "$APP"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -81,17 +80,17 @@ jobs:
           {
             echo "### Plan ($DIRECTION)"
             echo '```'
-            python backend/src/manage.py migrate "$@" --plan
+            uv run --frozen python backend/src/manage.py migrate "$@" --plan
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          python backend/src/manage.py migrate "$@" --plan
+          uv run --frozen python backend/src/manage.py migrate "$@" --plan
 
       - name: Migrate
         run: |
           if [ -n "$TARGET" ]; then
-            python backend/src/manage.py migrate "$APP" "$TARGET" --no-input
+            uv run --frozen python backend/src/manage.py migrate "$APP" "$TARGET" --no-input
           else
-            python backend/src/manage.py migrate --no-input
+            uv run --frozen python backend/src/manage.py migrate --no-input
           fi
 
       - name: State after
@@ -100,6 +99,6 @@ jobs:
           {
             echo "### After"
             echo '```'
-            python backend/src/manage.py showmigrations "$APP"
+            uv run --frozen python backend/src/manage.py showmigrations "$APP"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

@@ -1,6 +1,8 @@
-FROM python:3.9-slim
+FROM python:3.12-slim
 
 LABEL org.opencontainers.image.authors="UA"
+
+COPY --from=ghcr.io/astral-sh/uv:0.13.8 /uv /usr/local/bin/uv
 
 # Set environment variables
 ENV DEBIAN_FRONTEND=noninteractive \
@@ -10,7 +12,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     APP_DIR=/nba_app \
     USER_NAME=automater \
     AWS_DEFAULT_REGION=eu-west-2 \
-    FLASK_APP=api/app.py
+    FLASK_APP=api/app.py \
+    UV_PROJECT_ENVIRONMENT=/opt/venv \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH=/opt/venv/bin:$PATH
 
 # Install system dependencies (including build tools for Python packages)
 RUN apt-get update && \
@@ -32,9 +38,6 @@ RUN apt-get update && \
         nano && \
     rm -rf /var/lib/apt/lists/*
 
-# Upgrade pip first
-RUN pip install --upgrade pip wheel
-
 # Create non-root user
 RUN useradd -m $USER_NAME -s /bin/bash
 
@@ -42,14 +45,10 @@ RUN useradd -m $USER_NAME -s /bin/bash
 RUN mkdir $APP_DIR && chown $USER_NAME:$USER_NAME $APP_DIR
 WORKDIR $APP_DIR
 
-# Copy requirements and install Python dependencies to system Python
-COPY --chown=$USER_NAME:$USER_NAME requirements.txt .
-RUN echo "Contents of requirements.txt:" && \
-    cat requirements.txt && \
-    echo "=== Installing packages to system Python ===" && \
-    pip install --no-cache-dir -r requirements.txt && \
-    echo "=== Installation completed ===" && \
-    pip list
+# /opt/venv, not $APP_DIR/.venv: compose bind-mounts the host checkout over $APP_DIR
+# at runtime, which would shadow a project-local venv with the host's macOS one.
+COPY --chown=$USER_NAME:$USER_NAME pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application code
 COPY --chown=$USER_NAME:$USER_NAME . .

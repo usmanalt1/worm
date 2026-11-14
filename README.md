@@ -51,7 +51,8 @@ before changing anything in `services/ml_model`.
 
 - Docker and Docker Compose
 - A `.env` at the repo root (see below)
-- Python 3.9 only if you want to run dbt or Dagster outside the containers
+- [uv](https://docs.astral.sh/uv/) only if you want to run dbt or Dagster outside the
+  containers; `uv sync` builds the environment from `uv.lock`
 
 ### Environment
 
@@ -282,7 +283,7 @@ Everything except register and login requires a JWT.
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| [deploy.yml](.github/workflows/deploy.yml) | push to `main` touching `backend/`, `dagster/`, `pipeline_nba/`, `requirements.txt` or `Dockerfile` | Deploys `nba-api` to Cloud Run via workload identity federation |
+| [deploy.yml](.github/workflows/deploy.yml) | push to `main` touching `backend/`, `dagster/`, `pipeline_nba/`, `pyproject.toml`, `uv.lock` or `Dockerfile` | Deploys `nba-api` to Cloud Run via workload identity federation |
 | [nightly.yml](.github/workflows/nightly.yml) | manual | Runs `nightly_pipeline` against Neon and GCS, then emails the outcome |
 | [migrations.yml](.github/workflows/migrations.yml) | manual | Applies or rolls back Django migrations, printing before/plan/after into the job summary |
 | [django-checks.yml](.github/workflows/django-checks.yml) | PRs touching `backend/` | Fails if a model changed without a matching migration |
